@@ -116,11 +116,11 @@ Our implementation uses two distinct tables from the Peng1996 paper:
 
 
 
-## ChimeraX molmap Method
+### ChimeraX molmap Method
 
 The ChimeraX method implemented here replicates the `molmap` command from UCSF ChimeraX [1,2], which generates density maps by placing Gaussian functions at each atom position. The implementation is based on the actual ChimeraX C++ and Python code [3], ensuring compatibility with maps produced by ChimeraX.
 
-### Mathematical Formulation
+#### Mathematical Formulation
 
 In the ChimeraX `molmap` algorithm, each atom contributes a normalized 3D Gaussian density:
 
@@ -133,11 +133,11 @@ where:
 
 The total density at any grid point is the sum of contributions from all atoms within a cutoff distance:
 
-$$ \rho(\mathbf{r}) = \sum_{i: |\mathbf{r} - \mathbf{r}_i| < n\sigma} \rho_i(\mathbf{r}) $$
+$$\rho(\mathbf{r}) = \sum_{i: |\mathbf{r} - \mathbf{r}_i| < n\sigma} \rho_i(\mathbf{r})$$
 
 with the default cutoff $n = 5$ standard deviations, as implemented in the C++ function `sum_of_gaussians()` [3].
 
-### Resolution to Sigma Conversion
+#### Resolution to Sigma Conversion
 
 The relationship between the target resolution $R$ and the Gaussian width $\sigma$ in ChimeraX is:
 
@@ -145,7 +145,7 @@ $$ \sigma = \frac{R}{\pi\sqrt{2}} \approx 0.225R $$
 
 This relationship is defined by the `sigma_factor` parameter, with the default value $1/(\pi\sqrt{2})$. The Fourier transform of the Gaussian falls to $1/e$ of its maximum at wavenumber $1/R$ [2].
 
-### Grid Generation
+#### Grid Generation
 
 The map grid is generated using the following steps:
 
@@ -159,7 +159,7 @@ The map grid is generated using the following steps:
 
 5. **Origin**: Set the grid origin to the minimum coordinates: $r_{origin} = (x_{min}, y_{min}, z_{min})$.
 
-### Core Algorithm Implementation
+#### Core Algorithm Implementation
 
 The core computation in `gaussian.cpp` implements an optimized summation. For each atom, the algorithm:
 
@@ -168,24 +168,24 @@ The core computation in `gaussian.cpp` implements an optimized summation. For ea
 2. Computes contributions within the bounding box using nested loops ordered for cache efficiency $(k, j, i)$:    
    $$\rho(i,j,k) \mathrel{+}= Z \cdot \exp\left(-\frac{1}{2}\left[\left(\frac{i-i_c}{\sigma/s}\right)^2 + \left(\frac{j-j_c}{\sigma/s}\right)^2 + \left(\frac{k-k_c}{\sigma/s}\right)^2\right]\right)$$
 
-### Normalization
+#### Normalisation
 
 After summation, the map is normalized by: $\rho_{\text{norm}}(\mathbf{r}) = \rho(\mathbf{r}) \cdot (2\pi)^{-3/2} \sigma^{-3}$.
 
 This normalization ensures that the integral of each Gaussian equals its atomic number $Z$. The final map is then scaled to a maximum value of 1.0 for visualization compatibility [2].
 
-### Balls Mode
+#### Balls Mode
 
 An alternative representation using "balls" with Gaussian falloff is available when `balls=True`. In this mode, each atom contributes a constant value of 1 within its van der Waals radius $r_{\text{vdW}}$, with a Gaussian falloff outside:
 
-$$ \rho_i(\mathbf{r}) = \begin{cases}
+$$\rho_i(\mathbf{r}) = \begin{cases}
 1 & |\mathbf{r} - \mathbf{r}_i| \leq r_{\text{vdW}} \\
 \exp\left(-\frac{1}{2}\left(\frac{|\mathbf{r} - \mathbf{r}_i| - r_{\text{vdW}}}{\sigma}\right)^2\right) & |\mathbf{r} - \mathbf{r}_i| > r_{\text{vdW}}
-\end{cases} $$
+\end{cases}$$
 
 This mode produces maps where isosurfaces approximate the van der Waals envelope when contoured at low levels [2].
 
-### Input Parameters
+#### Input Parameters
 
 The implementation in `molmap.py` exposes the following parameters:
 
@@ -200,13 +200,13 @@ The implementation in `molmap.py` exposes the following parameters:
 | `balls` | `False` | Use balls mode instead of Gaussians |
 | `display_threshold` | `0.95` | Initial contour level as fraction of total density |
 
-### Relation to ChimeraX
+#### Relation to ChimeraX
 
 This implementation reproduces the exact behavior of ChimeraX's `molmap` command, as described in the ChimeraX documentation:
 
 > "The molmap command creates a density map from atomic structures by placing a Gaussian function at each atom position. The width of the Gaussian is determined by the resolution, with $\sigma = \text{resolution}/(\pi\sqrt{2})$. The map is normalized so that the sum of densities equals the total atomic number, and the maximum density is scaled to 1 for display." [4]
 
-### References
+#### References
 
 1. **ChimeraX**: Goddard, T.D., Huang, C.C., Meng, E.C., Pettersen, E.F., Couch, G.S., Morris, J.H., & Ferrin, T.E. (2018). *UCSF ChimeraX: Meeting modern challenges in visualization and analysis*. Protein Science, 27(1), 14-25. [DOI: 10.1002/pro.3235](https://doi.org/10.1002/pro.3235)
 
@@ -264,15 +264,15 @@ where $\sigma_{\text{target}}$ is the width required to achieve the desired reso
 
 #### References for Situs Method
 
-4. **Situs**: Wriggers, W. (2010). *Using Situs for the integration of multi-resolution structures*. Biophysical Reviews, 2(1), 21-27. [DOI: 10.1007/s12551-009-0024-5](https://doi.org/10.1007/s12551-009-0024-5)
+1. **Situs**: Wriggers, W. (2010). *Using Situs for the integration of multi-resolution structures*. Biophysical Reviews, 2(1), 21-27. [DOI: 10.1007/s12551-009-0024-5](https://doi.org/10.1007/s12551-009-0024-5)
 
-9. **Original Situs Paper**: Wriggers, W., Milligan, R.A., & McCammon, J.A. (1999). *Situs: A package for docking crystal structures into low-resolution maps from electron microscopy*. Journal of Structural Biology, 125(2-3), 185-195. [DOI: 10.1006/jsbi.1998.4080](https://doi.org/10.1006/jsbi.1998.4080)
+2. **Original Situs Paper**: Wriggers, W., Milligan, R.A., & McCammon, J.A. (1999). *Situs: A package for docking crystal structures into low-resolution maps from electron microscopy*. Journal of Structural Biology, 125(2-3), 185-195. [DOI: 10.1006/jsbi.1998.4080](https://doi.org/10.1006/jsbi.1998.4080)
 
-10. **Epanechnikov Kernel**: Epanechnikov, V.A. (1969). *Non-parametric estimation of a multivariate probability density*. Theory of Probability & Its Applications, 14(1), 153-158. [DOI: 10.1137/1114019](https://doi.org/10.1137/1114019)
+3. **Epanechnikov Kernel**: Epanechnikov, V.A. (1969). *Non-parametric estimation of a multivariate probability density*. Theory of Probability & Its Applications, 14(1), 153-158. [DOI: 10.1137/1114019](https://doi.org/10.1137/1114019)
 
-11. **pdb2vol Documentation**: Situs online documentation. *pdb2vol - Create a Volumetric Map from a PDB*. [https://situs.biomachina.org](https://situs.biomachina.org)
+4. **pdb2vol Documentation**: Situs online documentation. *pdb2vol - Create a Volumetric Map from a PDB*. [https://situs.biomachina.org](https://situs.biomachina.org)
 
-12. **Conventions Paper**: Wriggers, W. (2012). *Conventions and workflows for using Situs*. Acta Crystallographica Section D, 68(4), 344-351. [DOI: 10.1107/S0907444911049791](https://doi.org/10.1107/S0907444911049791)
+5. **Conventions Paper**: Wriggers, W. (2012). *Conventions and workflows for using Situs*. Acta Crystallographica Section D, 68(4), 344-351. [DOI: 10.1107/S0907444911049791](https://doi.org/10.1107/S0907444911049791)
 
 
 
@@ -297,6 +297,15 @@ The atomic scattering factors are then:
 $$f_e(s) = \sum_{i=1}^{5} a_i \exp\left(-(b_i + B_{\text{eff}}) s^2\right)$$
 
 This produces maps compatible with Refmac sharpening/blurring conventions, making them suitable for refinement and validation in crystallographic and cryo-EM workflows. The coefficients used in this method are taken directly from the Peng1996 paper, providing a robust and accurate parameterization.
+
+
+
+
+
+
+
+
+
 
 
 ## Building the Project
