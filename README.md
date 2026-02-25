@@ -170,6 +170,52 @@ This approach makes it practical to generate high-quality density maps from PDB 
 
 
 
+
+
+### Kernel Discretization and Normalization
+
+For an element with Peng1996 coefficients, the continuous kernel in real space is:
+
+$$K_{\text{element}}(\mathbf{r}) = \sum_{i=1}^{5} \frac{a_i}{(2\pi\sigma_i^2)^{3/2}} \exp\left(-\frac{|\mathbf{r}|^2}{2\sigma_i^2}\right)$$
+
+where $\sigma_i^2 = \frac{b_i}{4\pi^2} + \sigma_{\text{res}}^2$.
+
+The integral of this kernel over all space equals the element's scattering power at zero angle:
+
+$$\iiint K_{\text{element}}(\mathbf{r}) \, d^3\mathbf{r} = \sum_{i=1}^{5} a_i = f_e(0)$$
+
+This value varies by element (e.g., ~2.808 for Carbon, ~3.85 for Nitrogen, ~4.76 for Oxygen) and represents the total scattering power of the atom.
+
+#### Discretization and Normalization
+
+Our implementation follows a simple two-step process to create a properly normalized discrete kernel for convolution:
+
+**Step 1: Evaluate at grid points**
+
+For each grid point $(i,j,k)$ within the kernel extent (typically 3-5$\sigma$), compute the kernel value directly using the continuous function:
+
+$$K_{ijk} = \sum_{m=1}^{5} \frac{a_m}{(2\pi\sigma_m^2)^{3/2}} \exp\left(-\frac{(i h)^2 + (j h)^2 + (k h)^2}{2\sigma_m^2}\right)$$
+
+where $h$ is the grid spacing in Ångströms.
+
+**Step 2: Calculate sum and normalize**
+
+Compute the total sum of all kernel values: $S = \sum_{i,j,k} K_{ijk}$
+
+Then scale all kernel values so their sum equals the theoretical $f_e(0)$:
+
+$$K_{ijk}^{\text{norm}} = K_{ijk} \times \frac{f_e(0)}{S}$$
+
+This normalization ensures that when the kernel is used in convolution with a delta-map containing $N$ atoms of this element, the total density in the output map will be $N \times f_e(0)$, correctly representing the total scattering power.
+
+
+
+
+
+
+
+
+
 ### EMmer / GEMMI Method
 
 The EMmer method, inspired by the GEMMI library [Wojdyr2022], uses the complete International Tables Vol. C coefficients (c4322.lib) to generate real-space density maps through direct summation of Gaussian functions. This approach provides highly accurate electron scattering factors by incorporating the full 5-Gaussian parameterization with temperature factor optimization.
