@@ -76,7 +76,7 @@ Different software packages use slightly different criteria, all of which are im
 
 ***
 
-### Default Method: Peng1996 with Multi-Step Convolution
+### Default Method
 
 The default map generation method in pdb2mrc treats density generation as a sequence of convolutions, each handling a different physical effect. This modular approach ensures both accuracy and computational efficiency.
 
