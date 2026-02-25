@@ -72,6 +72,104 @@ Different software packages use slightly different criteria, all of which are im
 | ChimeraX | $\sigma = R/(\pi\sqrt{2})$ | Goddard2018 |
 | EMAN2 | $\sigma = R/(\pi\sqrt{8})$ | Tang2007 |
 
+
+
+
+### Default Method: Peng1996 with Per-Element FFT Convolution
+
+The default map generation method in pdb2mrc combines the accurate Peng1996 scattering factors with an efficient FFT-based convolution approach that processes each chemical element separately. This design choice enables both physical accuracy and computational efficiency.
+
+#### Core Strategy: Decoupling B-factors from Scattering Factors
+
+A key insight in our implementation is the separation of atomic scattering factors from temperature factors (B-factors). The electron scattering factor for an atom can be written as:
+
+$$f_e(s) = \underbrace{\sum_{i=1}^{5} a_i \exp(-b_i s^2)}_{\text{element-specific}} \times \underbrace{\exp(-B s^2 / 4)}_{\text{atom-specific B-factor}}$$
+
+This factorization is crucial because:
+- The element-specific part depends only on the chemical element and target resolution
+- The B-factor part varies per atom and includes thermal motion
+
+In real space, this factorization becomes even more powerful. The density contribution from an atom is:
+
+$$\rho(\mathbf{r}) = \underbrace{\mathcal{F}^{-1}\left[\sum_{i=1}^{5} a_i \exp(-b_i s^2)\right]}_{\text{element kernel}} * \underbrace{\mathcal{F}^{-1}\left[\exp(-B s^2 / 4)\right]}_{\text{B-factor Gaussian}}$$
+
+where $*$ denotes convolution. This means the total map can be built by:
+1. Precomputing an "element kernel" - the real-space density of a single atom of that element at the target resolution
+2. Convolving a point-spread function that depends on each atom's B-factor
+
+#### Per-Element Processing Workflow
+
+Our implementation takes advantage of this factorization through a multi-step process:
+
+1. **Element Classification**: All atoms are grouped by their chemical element (C, N, O, etc.)
+
+2. **Profile Precomputation**: For each unique element present, a radial density profile is precomputed using the Peng1996 coefficients at the target resolution:
+
+   $$\rho_{\text{element}}(r) = \sum_{i=1}^{5} \frac{a_i}{(2\pi(\sigma_i^2 + \sigma_{\text{res}}^2))^{3/2}} \exp\left(-\frac{r^2}{2(\sigma_i^2 + \sigma_{\text{res}}^2)}\right)$$
+
+   where $\sigma_i^2 = b_i/(4\pi^2)$ and $\sigma_{\text{res}}$ is determined by the target resolution.
+
+3. **Grid Projection (Real Space)**: Atoms are projected onto the 3D grid using trilinear interpolation, but **without any B-factor blurring**. This creates a "delta-map" where each atom contributes only to its eight neighboring voxels:
+
+   $$\rho_{\text{delta}}(\mathbf{r}) = \sum_j \delta(\mathbf{r} - \mathbf{r}_j) \cdot \text{occupancy}_j$$
+
+   This step is computationally cheap and preserves the exact atomic positions.
+
+4. **Element-Specific Convolution (Fourier Space)**: For each element type, the delta-map is convolved with the precomputed element kernel using FFT:
+
+   $$\rho_{\text{element}}(\mathbf{r}) = \rho_{\text{delta,element}}(\mathbf{r}) * \rho_{\text{element,kernel}}(\mathbf{r})$$
+
+   The convolution is performed efficiently in Fourier space:
+   - Forward FFT of the delta-map
+   - Forward FFT of the element kernel
+   - Complex multiplication in Fourier space
+   - Inverse FFT back to real space
+
+5. **Summation**: The per-element maps are summed to produce the final density map.
+
+#### Why This Approach is Efficient
+
+The per-element FFT convolution strategy offers several advantages:
+
+| Aspect | Traditional Approach | pdb2mrc Approach |
+|--------|---------------------|------------------|
+| **B-factor handling** | Different kernel per atom | Handled in real space, separated from element kernel |
+| **FFT operations** | One per atom (intractable) | One per element type (typically 5-10) |
+| **Memory usage** | Store all atom contributions | One grid per element type |
+| **Parallelization** | Difficult to load balance | Natural per-element parallelism |
+
+For a typical protein with 10,000 atoms and 8 unique elements:
+- Traditional approach: 10,000 FFTs (impossible)
+- pdb2mrc approach: 8 FFTs (efficient)
+
+#### Handling B-factors
+
+B-factors are incorporated through a two-stage process:
+
+1. **During projection**: Each atom's contribution is scaled by its occupancy and stored in the per-element delta-map
+
+2. **During convolution**: The element kernel already includes the resolution-dependent broadening. B-factors represent additional Gaussian broadening, which in Fourier space corresponds to multiplication by $\exp(-B s^2 / 4)$
+
+However, since B-factors vary per atom, they cannot be incorporated into the element kernel. Instead, they would require per-atom convolution - which is why in the default Peng1996 method, B-factors are **ignored** (or a default value is used) to maintain the efficiency of per-element convolution.
+
+This design choice reflects a fundamental trade-off:
+- **Without B-factors**: Fast, element-based FFT convolution (default)
+- **With B-factors**: Slower but more accurate for high-resolution work where thermal motion matters
+
+#### Memory and Performance Optimization
+
+The implementation includes several optimizations:
+
+- **Profile truncation**: Element kernels are truncated at a radius where density falls below $10^{-3}$ of the maximum, reducing kernel size
+- **Workspace reuse**: FFT buffers and descriptors are allocated once and reused for all elements
+- **OpenMP parallelization**: Per-element processing and FFT operations are parallelized where possible
+- **64-bit support**: Handles grids larger than $2^{31}$ voxels for high-resolution maps of large complexes
+
+This approach makes it practical to generate high-quality density maps from PDB files on standard workstations, with typical runtimes of seconds to minutes depending on grid size and atom count.
+
+
+
+
 ### EMmer / GEMMI Method
 
 The EMmer method, inspired by the GEMMI library [Wojdyr2022], uses the complete International Tables Vol. C coefficients (c4322.lib) to generate real-space density maps through direct summation of Gaussian functions. This approach provides highly accurate electron scattering factors by incorporating the full 5-Gaussian parameterization with temperature factor optimization.
