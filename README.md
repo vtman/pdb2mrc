@@ -132,16 +132,7 @@ $$w_{ijk}^{(n)} \approx \text{occupancy}_n \times \frac{1}{(2\pi\sigma_{B_n}^2)^
 
 This approximation becomes more accurate as the grid spacing decreases relative to $\sigma_{B_n}$. For typical grids where $h < \sigma_{B_n}/2$, the error is on the order of $(h/\sigma_{B_n})^2$.
 
-#### Comparison of Approaches
 
-| Aspect | Analytical Integration (erf) | Point Sampling |
-|--------|------------------------------|----------------|
-| **Accuracy** | Exact (machine precision) | Approximate, $O(h^2)$ error |
-| **Speed** | Slower (requires erf calls per voxel) | Faster (simple exp evaluation) |
-| **Occupancy conservation** | Exact per atom | Approximate, improves with finer grids |
-| **When to use** | Default, high accuracy needs | Time-critical applications, fine grids |
-
-The implementation allows users to choose between these options via a runtime flag, with analytical integration as the default for maximum accuracy.
 
 #### Result of Step 1
 
