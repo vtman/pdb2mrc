@@ -221,7 +221,7 @@ This implementation reproduces the exact behavior of ChimeraX's `molmap` command
 
 ### Situs Method
 
-The Situs method implemented here follows the real-space convolution approach established in the Situs package [4, 9]. It generates a density map by first projecting atomic structures onto a grid and then smoothing the result with a kernel function. This two-step process is designed to produce maps that correspond to a user-specified resolution.
+The Situs method implemented here follows the real-space convolution approach established in the Situs package [1, 2]. It generates a density map by first projecting atomic structures onto a grid and then smoothing the result with a kernel function. This two-step process is designed to produce maps that correspond to a user-specified resolution.
 
 #### Kernel Functions
 
@@ -244,11 +244,11 @@ The kernel functions are:
 | **Epanechnikov** | $\max\left(0, 1 - \dfrac{r^2}{2r_h^2}\right)$ | $r_h$ is the half-max radius |
 | **Hard Sphere** | $\max\left(0, 1 - \dfrac{r^{60}}{2r_h^{60}}\right)$ | $r_h$ is the half-max radius |
 
-The **Epanechnikov kernel** is a special case, as it is known to be optimal for minimizing the asymptotic mean integrated square error in kernel density estimation [10].
+The **Epanechnikov kernel** is a special case, as it is known to be optimal for minimizing the asymptotic mean integrated square error in kernel density estimation [3].
 
 #### Map Generation Workflow
 
-The map generation follows a two-step process, consistent with the description of the `pdb2vol` tool from the Situs documentation [11]:
+The map generation follows a two-step process, consistent with the description of the `pdb2vol` tool from the Situs documentation [4]:
 
 1.  **Projection to Lattice**: Atoms are projected onto a cubic lattice using **trilinear interpolation**. Each atom, with a given position and weight (atomic mass or unity), contributes to the eight surrounding voxels. This creates an intermediate "lattice" representation of the structure.
 
@@ -260,7 +260,7 @@ The initial projection onto a lattice introduces an inherent, small amount of bl
 
 $$\sigma_{\text{corrected}}^2 = \sigma_{\text{target}}^2 - \sigma_{\text{lattice}}^2$$
 
-where $\sigma_{\text{target}}$ is the width required to achieve the desired resolution, and $\sigma_{\text{lattice}}$ is the standard deviation of the point-spread function introduced by the trilinear projection. This correction ensures that the final map more accurately matches the target resolution [4, 12].
+where $\sigma_{\text{target}}$ is the width required to achieve the desired resolution, and $\sigma_{\text{lattice}}$ is the standard deviation of the point-spread function introduced by the trilinear projection. This correction ensures that the final map more accurately matches the target resolution [1, 2, 5].
 
 #### References for Situs Method
 
