@@ -4,16 +4,16 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue)](#)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
 
-A high-performance C++ library and command-line tool for generating cryo-EM density maps from atomic models (PDB files) at specified resolutions. The program implements multiple map generation algorithms commonly used in structural biology, including the classic Peng1996 method (International Tables), the ChimeraX `molmap` algorithm, the Situs multi-kernel approach, and the EMmer method based on updated International Tables coefficients.
+A high-performance C++ library and command-line tool for generating cryo-EM density maps from atomic models (PDB files) at specified resolutions. The program implements multiple **real-space** map generation algorithms commonly used in structural biology, including the classic Peng1996 method (International Tables), the ChimeraX `molmap` algorithm, the Situs multi-kernel approach, and the EMmer method based on updated International Tables coefficients.
 
 ## Table of Contents
 - [Features](#features)
 - [Theory](#theory)
   - [Resolution Definition](#resolution-definition)
+  - [EMmer / GEMMI Method](#emmer--gemmi-method)
   - [Peng1996 / International Tables Method](#peng1996--international-tables-method)
   - [ChimeraX molmap Method](#chimerax-molmap-method)
   - [Situs Method](#situs-method)
-  - [EMmer / GEMMI Method](#emmer--gemmi-method)
 - [Input Parameters](#input-parameters)
 - [Examples](#examples)
 - [References](#references)
@@ -23,17 +23,16 @@ A high-performance C++ library and command-line tool for generating cryo-EM dens
 
 ## Features
 
-- **Multiple Map Generation Methods**:
+- **Multiple Real-Space Map Generation Methods**:
+  - **EMmer/GEMMI**: Method based on the complete International Tables Vol. C coefficients (c4322.lib) with Refmac-compatible blur, inspired by the GEMMI library [Wojdyr2022]
   - **Peng1996**: The classic 5-Gaussian parameterization of electron scattering factors from International Tables for Crystallography [Peng1996]
   - **ChimeraX**: UCSF ChimeraX `molmap` algorithm, which applies a single Gaussian blur to atomic coordinates [Goddard2018, Pettersen2020]
   - **Situs**: Density projection method with multiple kernel choices (Gaussian, triangular, Epanechnikov) and configurable resolution definitions [Wriggers2010, Wriggers1999]
-  - **EMmer**: Method based on the complete International Tables Vol. C coefficients (c4322.lib) with Refmac-compatible blur, inspired by the GEMMI library [Wojdyr2022]
 
-- **Resolution Criteria**:
+- **Resolution Criteria** (all real-space definitions):
   - Rayleigh criterion: $\sigma = R/1.665$ [Rayleigh1879]
   - ChimeraX: $\sigma = R/(\pi\sqrt{2})$ [Goddard2018]
   - EMAN2: $\sigma = R/(\pi\sqrt{8})$ [Tang2007]
-  - FSC-based: $R_{FSC=0.143}$ and $R_{FSC=0.5}$ [Rosenthal2003]
 
 - **Amplitude Scaling Modes**:
   - Peng1996 $f_e(0)$ values (sum of Gaussian coefficients) [Peng1996]
@@ -65,15 +64,79 @@ $$\sigma = \frac{R}{1.665}$$
 
 where $R$ is the target resolution and $\sigma$ is the standard deviation of the Gaussian kernel.
 
-Different software packages use slightly different criteria, which are all supported:
+Different software packages use slightly different criteria, all of which are implemented:
 
 | Criterion | Formula | Reference |
 |-----------|---------|-----------|
 | Rayleigh | $\sigma = R/1.665$ | Rayleigh1879 |
 | ChimeraX | $\sigma = R/(\pi\sqrt{2})$ | Goddard2018 |
 | EMAN2 | $\sigma = R/(\pi\sqrt{8})$ | Tang2007 |
-| FSC=0.143 | $\sigma = R/(1.1 \times 1.665)$ | Rosenthal2003 |
-| FSC=0.5 | $\sigma = R/(1.3 \times 1.665)$ | Rosenthal2003 |
+
+### EMmer / GEMMI Method
+
+The EMmer method, inspired by the GEMMI library [Wojdyr2022], uses the complete International Tables Vol. C coefficients (c4322.lib) to generate real-space density maps through direct summation of Gaussian functions. This approach provides highly accurate electron scattering factors by incorporating the full 5-Gaussian parameterization with temperature factor optimization.
+
+#### Gaussian Coefficient Database
+
+The method employs the comprehensive coefficient table from International Tables Vol. C [InternationalTables2006], containing parameters for elements up to Californium (Z=98). For each element, five Gaussian terms capture the scattering behavior:
+
+$$f_e(s) = \sum_{i=1}^{5} a_i \exp(-b_i s^2)$$
+
+where $s = \sin\theta/\lambda$ is the scattering vector. The coefficients $a_i$ and $b_i$ are empirically determined to fit experimental scattering factors across the full resolution range.
+
+#### Real-Space Density Formulation
+
+In real space, each Gaussian term in the scattering factor corresponds to a Gaussian density distribution. The total density contribution from an atom at position $\mathbf{r}_j$ is:
+
+$$\rho_j(\mathbf{r}) = \sum_{i=1}^{5} \frac{a_i}{(2\pi\sigma_i^2)^{3/2}} \exp\left(-\frac{|\mathbf{r} - \mathbf{r}_j|^2}{2\sigma_i^2}\right)$$
+
+The width of each Gaussian component combines the intrinsic atomic scattering width with thermal motion (B-factor) and optional resolution-dependent blur:
+
+$$\sigma_i^2 = \frac{b_i}{4\pi^2} + \frac{B_j}{8\pi^2} + \sigma_{\text{blur}}^2$$
+
+where:
+- $b_i$ are the coefficients from International Tables
+- $B_j$ is the atomic B-factor from the PDB file
+- $\sigma_{\text{blur}}$ is an optional additional blurring term
+
+#### Refmac-Compatible Blur
+
+A key feature of the EMmer method is the optional application of Refmac-compatible blur [Murshudov1997, Murshudov2011]. When enabled, an effective B-factor is calculated to match the conventions used in crystallographic refinement:
+
+$$B_{\text{eff}} = \frac{8\pi^2}{1.1} \left(\frac{d_{\min}}{2R}\right)^2 - B_{\min}$$
+
+where:
+- $d_{\min}$ is the high-resolution limit (target resolution)
+- $R = 1.5$ is the Shannon rate (configurable via `--emmer-rate`)
+- $B_{\min}$ is the minimum B-factor in the structure
+
+This effective B-factor is then incorporated into the Gaussian widths, producing maps that are directly compatible with Refmac-sharpened maps used in crystallography and cryo-EM refinement workflows.
+
+#### Direct Real-Space Summation
+
+Unlike Fourier-based methods, EMmer generates maps through direct summation in real space, which offers several advantages:
+
+1. **Natural handling of B-factors**: Individual atomic B-factors are directly incorporated into the Gaussian widths
+2. **Accurate near-field behavior**: The multi-Gaussian representation correctly models the complex density near atomic nuclei
+3. **No FFT artifacts**: Direct summation avoids Gibbs phenomena and aliasing issues
+4. **Parallelizable**: The atom-centered contributions can be computed independently and summed
+
+For each atom, the contribution is calculated only within a sphere where the density exceeds a cutoff threshold ($10^{-5}$ by default), determined by analyzing the decay of each Gaussian component:
+
+$$r_{\text{cut}} = \max_i \sqrt{\frac{\ln(a_i / \text{cutoff})}{-w_i}}$$
+
+where $w_i$ is the width parameter for the i-th Gaussian.
+
+#### Symmetry Expansion
+
+When working with crystallographic data, the method can optionally apply space group symmetry to expand the asymmetric unit atoms throughout the unit cell. This ensures that the final map includes all symmetry-related density contributions, essential for crystal structure visualization and validation.
+
+#### Output Alignment
+
+For compatibility with standard visualization tools, the EMmer method includes an optional output alignment step that applies the MRC/CCP4 convention for map orientation. This ensures that the generated maps display correctly in programs like ChimeraX, Coot, and PyMOL without requiring manual reorientation.
+
+
+
 
 ### Peng1996 / International Tables Method
 
@@ -409,8 +472,6 @@ I'll update the References section with DOIs and links:
 
 [Rayleigh1879] Rayleigh, L. (1879). Investigations in optics, with special reference to the spectroscope. *Philosophical Magazine*, 8(49), 261-274. https://doi.org/10.1080/14786447908639684
 
-[Rosenthal2003] Rosenthal, P. B., & Henderson, R. (2003). Optimal determination of particle orientation, absolute hand, and contrast loss in single-particle electron cryomicroscopy. *Journal of Molecular Biology*, 333(4), 721-745. https://doi.org/10.1016/j.jmb.2003.07.013
-
 [SitusDoc] Situs. (2023). *pdb2vol - Create a volumetric map from a PDB*. Online documentation. https://situs.biomachina.org
 
 [Tang2007] Tang, G., Peng, L., Baldwin, P. R., Mann, D. S., Jiang, W., Rees, I., & Ludtke, S. J. (2007). EMAN2: An extensible image processing suite for electron microscopy. *Journal of Structural Biology*, 157(1), 38-46. https://doi.org/10.1016/j.jsb.2006.05.009
@@ -424,6 +485,7 @@ I'll update the References section with DOIs and links:
 [Wriggers2012] Wriggers, W. (2012). Conventions and workflows for using Situs. *Acta Crystallographica Section D*, 68(4), 344-351. https://doi.org/10.1107/S0907444911049791
 
 [Cheng2015] Cheng, A., Henderson, R., Mastronarde, D., Ludtke, S. J., Schoenmakers, R. H., Short, J., ... & Agard, D. A. (2015). MRC2014: Extensions to the MRC format header for electron cryo-microscopy and tomography. *Journal of Structural Biology*, 192(2), 146-150. https://doi.org/10.1016/j.jsb.2015.04.002
+
 
 ## Citation
 
