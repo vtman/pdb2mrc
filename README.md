@@ -10,6 +10,7 @@ A high-performance C++ library and command-line tool for generating cryo-EM dens
 - [Features](#features)
 - [Theory](#theory)
   - [Resolution Definition](#resolution-definition)
+  - [Default Method](#default-method)
   - [EMmer / GEMMI Method](#emmer--gemmi-method)
   - [Peng1996 / International Tables Method](#peng1996--international-tables-method)
   - [ChimeraX molmap Method](#chimerax-molmap-method)
@@ -73,38 +74,37 @@ Different software packages use slightly different criteria, all of which are im
 | EMAN2 | $\sigma = R/(\pi\sqrt{8})$ | Tang2007 |
 
 
+***
 
-
-
-## Default Method: Peng1996 with Multi-Step Convolution
+### Default Method: Peng1996 with Multi-Step Convolution
 
 The default map generation method in pdb2mrc treats density generation as a sequence of convolutions, each handling a different physical effect. This modular approach ensures both accuracy and computational efficiency.
 
-### The Convolution Chain
+#### The Convolution Chain
 
 The complete density map can be expressed as a series of convolutions applied to the ideal atomic distribution:
 
-$$\rho_{\text{final}} = \left( \sum_{\text{atoms}} \delta(\mathbf{r} - \mathbf{r}_j) \right) * K_{\text{element}} * G_{B_j} * G_{\text{res}}$$
+$$\rho_{\text{final}} = \left( \sum_{\text{atoms}} \delta(r - r_n) \right) * K_{\text{element}} * G_{B_n} * G_{\text{res}}$$
 
 where:
-- $\delta(\mathbf{r} - \mathbf{r}_j)$ is the ideal point source for atom $j$
+- $\delta(r - r_n)$ is the ideal point source for atom $n$
 - $K_{\text{element}}$ is the element-specific 5-Gaussian kernel from Peng1996 (same for all atoms of a given element)
-- $G_{B_j}$ is the B-factor Gaussian for atom $j$ (varies per atom)
+- $G_{B_n}$ is the B-factor Gaussian for atom $n$ (varies per atom)
 - $G_{\text{res}}$ is the resolution Gaussian (same for all atoms)
 
 Since convolution is associative and commutative, we can group these operations to maximize computational efficiency. Our implementation uses a two-step approach that separates per-atom variations from element-specific and global operations.
 
-## Step 1: Delta Function + B-factor Blurring (Combined)
+#### Step 1: Delta Function + B-factor Blurring (Combined)
 
 Instead of treating the delta function and B-factor blurring as separate steps, we combine them into a single operation for each atom. For atom $n$ with B-factor $B_n$, its contribution to the map is:
 
-$$\rho_n(\mathbf{r}) = \delta(\mathbf{r} - \mathbf{r}_n) * G_{B_n}(\mathbf{r}) = \frac{1}{(2\pi\sigma_{B_n}^2)^{3/2}} \exp\left(-\frac{|\mathbf{r} - \mathbf{r}_n|^2}{2\sigma_{B_n}^2}\right)$$
+$$\rho_n(\mathbf{r}) = \delta(r - r_n) * G_{B_n}(\mathbf{r}) = \frac{1}{(2\pi\sigma_{B_n}^2)^{3/2}} \exp\left(-\frac{|r - r_n|^2}{2\sigma_{B_n}^2}\right)$$
 
-where $\sigma_{B_n}^2 = \frac{B_n}{8\pi^2}$ and $\mathbf{r}_n = (x_n, y_n, z_n)$ is the atom position.
+where $\sigma_{B_n}^2 = \frac{B_n}{8\pi^2}$ and $r_n = (x_n, y_n, z_n)$ is the atom position.
 
-For each atom, we distribute its contribution to nearby grid points within a cutoff radius (typically $5\sigma_{B_n}$). The weight assigned to grid point $(i,j,k)$ (with coordinates $\mathbf{r}_{ijk} = (x_i, y_j, z_k)$) can be calculated in two ways.
+For each atom, we distribute its contribution to nearby grid points within a cutoff radius (typically $5\sigma_{B_n}$). The weight assigned to grid point $(i,j,k)$, with coordinates $r_{ijk} = (x_i, y_j, z_k)$, can be calculated in two ways.
 
-### Option A: Analytical Integration Using Error Functions (Default)
+##### Option A: Analytical Integration Using Error Functions (Default)
 
 The exact weight is obtained by integrating the Gaussian over the voxel volume. For a voxel with boundaries $[x_i, x_i+h]$, $[y_j, y_j+h]$, $[z_k, z_k+h]$, the integral factorizes into three one-dimensional integrals:
 
@@ -124,7 +124,7 @@ $$\sum_{i,j,k} w_{ijk}^{(n)} = \text{occupancy}_n$$
 
 regardless of grid spacing.
 
-### Option B: Point Sampling (Faster)
+##### Option B: Point Sampling (Faster)
 
 For faster computation, the weight can be approximated by evaluating the Gaussian at the grid point and multiplying by the voxel volume:
 
@@ -132,7 +132,7 @@ $$w_{ijk}^{(n)} \approx \text{occupancy}_n \times \frac{1}{(2\pi\sigma_{B_n}^2)^
 
 This approximation becomes more accurate as the grid spacing decreases relative to $\sigma_{B_n}$. For typical grids where $h < \sigma_{B_n}/2$, the error is on the order of $(h/\sigma_{B_n})^2$.
 
-### Comparison of Approaches
+#### Comparison of Approaches
 
 | Aspect | Analytical Integration (erf) | Point Sampling |
 |--------|------------------------------|----------------|
@@ -143,7 +143,7 @@ This approximation becomes more accurate as the grid spacing decreases relative 
 
 The implementation allows users to choose between these options via a runtime flag, with analytical integration as the default for maximum accuracy.
 
-### Result of Step 1
+#### Result of Step 1
 
 After processing all atoms, we obtain for each element type $m$ a **B-factor blurred map**:
 
@@ -151,7 +151,7 @@ $$\rho_{B,m}(\mathbf{r}_{ijk}) = \sum_{n \in \text{element } m} w_{ijk}^{(n)}$$
 
 This map represents the atomic distribution including thermal motion, but still at **infinite resolution** - only B-factor broadening has been applied. The element kernel and resolution blur will be applied in Step 2.
 
-### Step 2: Element Kernel + Resolution Blurring (Combined)
+#### Step 2: Element Kernel + Resolution Blurring (Combined)
 
 After B-factor blurring, we need to apply two remaining convolutions:
 - The element-specific kernel $K_{\text{element}}$ (from Peng1996 coefficients)
@@ -163,9 +163,9 @@ $$\rho_{\text{element}}(\mathbf{r}) = \rho_{B,\text{element}}(\mathbf{r}) * \lef
 
 The Fourier transforms have simple analytical forms:
 
-$$\mathcal{F}[K_{\text{element}}](s) = \sum_{i=1}^{5} a_i \exp\left(-\frac{b_i s^2}{4\pi^2}\right)$$
+$$F \left(K_{\text{element}}\right) (s) = \sum_{i=1}^{5} a_i \exp\left(-\frac{b_i s^2}{4\pi^2}\right)$$
 
-$$\mathcal{F}[G_{\text{res}}](s) = \exp\left(-\frac{\sigma_{\text{res}}^2 s^2}{2}\right)$$
+$$F \left(G_{\text{res}}\right)(s) = \exp\left(-\frac{\sigma_{\text{res}}^2 s^2}{2}\right)$$
 
 The combined kernel in Fourier space is therefore:
 
@@ -177,18 +177,9 @@ For each element type, we:
 - Perform an inverse FFT to obtain the final map for that element
 - Sum all element maps to produce the complete density map
 
-### Visual Representation of the Convolution Chain
 
-```
-Physical Process:    δ(r - r_j)  →  Thermal motion  →  Element kernel  →  Resolution blur
-                    (point atom)      (G_B_j)           (K_element)        (G_res)
 
-Our Implementation:
-Step 1 (Real space):  δ(r - r_j) * G_B_j  =  ρ_B(r)  [B-factor blurred map]
-Step 2 (Fourier space):  ρ_B(r) * (K_element * G_res)  =  ρ_final(r)
-```
-
-### Why This Grouping is Optimal
+#### Why This Grouping is Optimal
 
 | Step | Domain | Handles | Advantages |
 |------|--------|---------|------------|
@@ -197,7 +188,7 @@ Step 2 (Fourier space):  ρ_B(r) * (K_element * G_res)  =  ρ_final(r)
 
 This separation minimizes computational cost while maintaining physical accuracy. The expensive per-atom operations are confined to real space and scale linearly with atom count, while the FFT operations scale as $O(E \times N \log N)$ where $E$ is the number of unique elements (typically 5-10) and $N$ is the grid size.
 
-### Kernel Normalization
+#### Kernel Normalization
 
 Proper normalization is critical for physically meaningful maps:
 
@@ -209,7 +200,7 @@ Proper normalization is critical for physically meaningful maps:
 
    This is achieved by evaluating the continuous kernel at grid points, computing the total sum $S$, then scaling all values by $f_e(0)/S$.
 
-### Verification: Conservation of Total Density
+#### Verification: Conservation of Total Density
 
 After both steps, the total density in the map satisfies a fundamental conservation law:
 
@@ -217,7 +208,7 @@ $$\iiint \rho_{\text{final}}(\mathbf{r}) \, d^3\mathbf{r} = \sum_{\text{atoms}} 
 
 This means the map integral equals the sum of each atom's occupancy multiplied by its element's scattering power. This serves as a key validation check in our implementation.
 
-### Flexibility Through Modular Design
+#### Flexibility Through Modular Design
 
 The two-step approach offers significant practical advantages:
 
@@ -233,7 +224,7 @@ For example, to generate maps at 5Å, 8Å, and 10Å from the same structure:
 
 This makes multi-resolution analysis extremely efficient, enabling rapid generation of map series for multi-scale fitting or resolution-dependence studies.
 
-
+***
 
 ### EMmer / GEMMI Method
 
@@ -300,30 +291,9 @@ For compatibility with standard visualization tools, the EMmer method includes a
 
 
 
+***
 
-### Peng1996 / International Tables Method
 
-This method uses the 5-Gaussian parameterization of electron scattering factors from the **International Tables for Crystallography** [InternationalTables2006] as parameterized by Peng and colleagues [Peng1996]. The scattering factor for an element as a function of resolution is:
-
-$$f_e(s) = \sum_{i=1}^{5} a_i \exp(-b_i s^2)$$
-
-where $s = \sin\theta/\lambda$ is the scattering vector. The real-space density is obtained by inverse Fourier transform:
-
-$$\rho(r) = \mathcal{F}^{-1}[f_e(s)] = \sum_{i=1}^{5} \frac{a_i}{(2\pi\sigma_i^2)^{3/2}} \exp\left(-\frac{r^2}{2\sigma_i^2}\right)$$
-
-The total width includes both the intrinsic atomic scattering and the resolution broadening:
-
-$$\sigma_i^2 = \frac{b_i}{4\pi^2} + \sigma_{\text{res}}^2$$
-
-where $\sigma_{\text{res}}$ is determined by the target resolution using the chosen criterion.
-
-Our implementation uses two distinct tables from the Peng1996 paper:
-- **Table 1** (pages 260-261): Elastic scattering factors for $s$ up to $2.0 \text{Å}^{-1}$. Used for lower resolution maps.
-- **Table 3** (pages 264-265): Elastic scattering factors for $s$ up to $6.0 \text{Å}^{-1}$. Used for higher resolution maps, providing a more accurate representation at larger scattering angles.
-
-**Amplitude Modes**:
-- **Peng1996**: Uses the sum of coefficients $\sum a_i$ as the atomic scattering power at zero angle [Peng1996].
-- **Atomic Number**: Scales by $Z$ (EMAN2-style), useful for mass-weighted maps where density is proportional to atomic mass [Tang2007].
 
 ### ChimeraX molmap Method
 
@@ -396,6 +366,12 @@ $$\rho_i(\mathbf{r}) = \begin{cases}
 \end{cases}$$
 
 This mode produces maps where isosurfaces approximate the van der Waals envelope when contoured at low levels [Goddard2018].
+
+
+
+
+
+***
 
 ### Situs Method
 
