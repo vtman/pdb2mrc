@@ -14,9 +14,7 @@ A high-performance C++ library and command-line tool for generating cryo-EM dens
   - [ChimeraX molmap Method](#chimerax-molmap-method)
   - [Situs Method](#situs-method)
   - [EMmer / GEMMI Method](#emmer--gemmi-method)
-- [Building the Project](#building-the-project)
 - [Usage](#usage)
-- [Performance](#performance)
 - [References](#references)
 - [Citation](#citation)
 - [License](#license)
@@ -295,79 +293,198 @@ This produces maps compatible with Refmac sharpening/blurring conventions, makin
 - **OpenMP**: For shared-memory parallelization (usually included with modern compilers).
 - **C++17 compliant compiler**: e.g., GCC 7+, Clang 5+, MSVC 2017+.
 
-### Build Instructions
-
-#### Using CMake (Recommended for all platforms)
-
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/yourusername/pdb2mrc.git
-    cd pdb2mrc
-    ```
-
-2.  **Create a build directory:**
-    ```bash
-    mkdir build
-    cd build
-    ```
-
-3.  **Configure the project with CMake:**
-    - On **Linux/macOS**:
-        Ensure the Intel oneAPI environment is sourced. The CMake script is designed to find Intel IPP and MKL automatically if they are in standard paths.
-        ```bash
-        source /opt/intel/oneapi/setvars.sh
-        cmake .. -DCMAKE_BUILD_TYPE=Release
-        ```
-    - On **Windows**:
-        Open "Intel oneAPI command prompt for x64" and run:
-        ```bash
-        cmake .. -G "Visual Studio 17 2022" -A x64
-        ```
-        Or for Ninja:
-        ```bash
-        cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release
-        ```
-
-4.  **Build the project:**
-    ```bash
-    cmake --build . --config Release
-    ```
-
-5.  **Install (optional):**
-    ```bash
-    cmake --install . --prefix /path/to/install
-    ```
-
-#### Using Visual Studio (Windows only)
-
-1.  Open the "Intel oneAPI command prompt for x64".
-2.  Navigate to the project root.
-3.  Generate Visual Studio solution files using CMake as described above.
-4.  Open the generated `pdb2mrc.sln` file in Visual Studio and build.
 
 
 
 
 
-## Performance
-
-Benchmarks on 1ake.pdb (~100k atoms) using Intel Xeon Gold 6248 @ 2.5GHz, 32 threads:
-
-| Method | Resolution | Grid Size | Time (s) | Memory (GB) |
-|--------|------------|-----------|----------|-------------|
-| Peng1996 | 3.0 Å | 512³ | 45.2 | 2.1 |
-| Peng1996 | 6.0 Å | 256³ | 12.8 | 0.8 |
-| ChimeraX | 3.0 Å | 512³ | 28.4 | 1.2 |
-| ChimeraX | 6.0 Å | 256³ | 7.6 | 0.4 |
-| Situs (Gaussian) | 6.0 Å | 256³ | 18.3 | 1.0 |
-| EMmer | 3.0 Å | 512³ | 52.1 | 2.4 |
-| EMmer | 6.0 Å | 256³ | 14.2 | 0.9 |
-
-*Benchmarks with Intel MKL 2023.0, OpenMP parallelization*
 
 
+## Input Parameters Reference
+
+This document describes all input parameters accepted by the `pdb2mrc` command-line tool, organized by functionality.
+
+---
+
+### Required Parameters
+
+| Parameter | Format | Description |
+|-----------|--------|-------------|
+| `-i FILE` | string | Input PDB file path |
+| `-o FILE` | string | Output MRC file path |
+
+---
+
+### Method Selection
+
+| Parameter | Format | Description |
+|-----------|--------|-------------|
+| `--method STR` | string | Generation method: `peng1996` (default), `chimerax`, `situs`, `emmer` |
+
+---
+
+### Common Parameters
+
+| Parameter | Format | Default | Description |
+|-----------|--------|---------|-------------|
+| `-r FLOAT` | float | 6.0 | Target resolution in Ångströms |
+| `-c STR` | string | `rayleigh` | Resolution criterion: `rayleigh`, `chimerax`, `eman2`, `fsc0143`, `fsc05` |
+| `-s FLOAT` | float | auto | Voxel size in Å (default = resolution/3) |
+| `-p FLOAT` | float | 3.0 | Padding around atoms in Å |
+| `-t INT` | int | 0 | Number of OpenMP threads (0 = auto) |
+| `-v` | flag | - | Verbose output |
+| `-q` | flag | - | Quiet mode |
+| `-h` | flag | - | Show help message |
+
+---
+
+### PDB Filtering Parameters
+
+| Parameter | Format | Default | Description |
+|-----------|--------|---------|-------------|
+| `--filter-h` | flag | on | Filter out hydrogen atoms |
+| `--no-filter-h` | flag | - | Keep hydrogen atoms |
+| `--filter-w` | flag | off | Filter out water molecules |
+| `-b FLOAT` | float | 0.0 | B-factor cutoff (exclude atoms with B > value, 0 = no cutoff) |
+
+---
+
+### Peng1996/AtomicNumber Parameters
+
+| Parameter | Format | Default | Description |
+|-----------|--------|---------|-------------|
+| `-a STR` | string | `peng1996` | Amplitude mode: `peng1996` or `atomic-number` |
+| `--no-bfac` | flag | - | Ignore B-factors from PDB file |
+
+---
+
+### ChimeraX-Specific Parameters
+
+| Parameter | Format | Default | Description |
+|-----------|--------|---------|-------------|
+| `--cutoff FLOAT` | float | 5.0 | Cutoff range in sigma ($n\sigma$) |
+| `--no-norm` | flag | - | Skip final normalization to maximum 1.0 |
+
+The ChimeraX method uses the following relationships:
+
+| Parameter | Formula | Description |
+|-----------|---------|-------------|
+| Sigma | $\sigma = R/(\pi\sqrt{2})$ | Gaussian width |
+| Cutoff radius | $r_{\text{cut}} = n \cdot \sigma$ | Maximum distance for atom contributions |
+| Grid spacing | $s = R/3$ | Default voxel size |
+
+---
+
+### Situs-Specific Parameters
+
+| Parameter | Format | Default | Description |
+|-----------|--------|---------|-------------|
+| `--situs-kernel NUM` | int (1-5) | 1 | Kernel type by number |
+| `--situs-kernel-type TYPE` | string | `gaussian` | Kernel type by name |
+| `--situs-halfmax FLOAT` | float | - | Set resolution as half-max radius (positive value) |
+| `--situs-2sigma FLOAT` | float | - | Set resolution as $2\sigma$ (negative value) |
+| `--situs-margin INT` | int | 2 | Margin voxels around structure |
+| `--situs-mass` | flag | on | Use atomic mass weighting |
+| `--situs-no-mass` | flag | - | Use unit weights (each atom = 1) |
+| `--situs-correction` | flag | on | Apply lattice smoothing correction |
+| `--situs-no-correction` | flag | - | Skip lattice correction |
+| `--situs-amplitude FLOAT` | float | 1.0 | Kernel amplitude scaling factor |
+
+#### Situs Kernel Types
+
+| Number | Name | Function |
+|--------|------|----------|
+| 1 | `gaussian` | $\exp(-1.5 r^2/\sigma^2)$ |
+| 2 | `triangular` | $\max(0, 1 - r/(2r_h))$ |
+| 3 | `semi-epanechnikov` | $\max(0, 1 - r^{1.5}/(2r_h^{1.5}))$ |
+| 4 | `epanechnikov` | $\max(0, 1 - r^2/(2r_h^2))$ |
+| 5 | `hard-sphere` | $\max(0, 1 - r^{60}/(2r_h^{60}))$ |
+
+#### Situs Resolution Modes
+
+| Mode | Input | Interpretation |
+|------|-------|----------------|
+| Half-max radius | positive value | $r_h =$ input value |
+| $2\sigma$ mode | negative value | $r_s = \| \text{input} \|$, $\sigma = r_s/2$ |
+
+---
+
+### EMmer-Specific Parameters
+
+| Parameter | Format | Default | Description |
+|-----------|--------|---------|-------------|
+| `--emmer-align` | flag | on | Apply MRC output alignment (flip+rotate) |
+| `--emmer-no-align` | flag | - | Skip output alignment |
+| `--emmer-refmac-blur` | flag | on | Apply Refmac-compatible blur |
+| `--emmer-no-blur` | flag | - | Skip Refmac blur |
+| `--emmer-blur FLOAT` | float | 0.0 | Manual blur value in Å² (0 = auto) |
+| `--emmer-symmetry` | flag | on | Apply space group symmetry |
+| `--emmer-no-symmetry` | flag | - | Skip symmetry expansion |
+| `--emmer-cutoff FLOAT` | float | 1e-5 | Density cutoff for radius determination |
+| `--emmer-rate FLOAT` | float | 1.5 | Shannon rate for grid spacing |
+
+#### EMmer Blur Calculation
+
+When `--emmer-refmac-blur` is enabled and no manual blur is provided, the blur is calculated as:
+
+$$ B_{\text{eff}} = \frac{8\pi^2}{1.1} \left(\frac{d_{\min}}{2R}\right)^2 - B_{\min} $$
+
+where:
+- $d_{\min}$ is the target resolution
+- $R = 1.5$ is the Shannon rate
+- $B_{\min}$ is the minimum B-factor in the structure
+
+---
+
+### Resolution Criteria Reference
+
+The following criteria convert target resolution $R$ to Gaussian sigma $\sigma$:
+
+| Criterion | Formula | Typical Use |
+|-----------|---------|-------------|
+| Rayleigh | $\sigma = R/1.665$ | Standard optics criterion |
+| ChimeraX | $\sigma = R/(\pi\sqrt{2})$ | UCSF ChimeraX molmap |
+| EMAN2 | $\sigma = R/(\pi\sqrt{8})$ | EMAN2 package |
+| FSC=0.143 | $\sigma = R/(1.1 \times 1.665)$ | High-resolution cryo-EM |
+| FSC=0.5 | $\sigma = R/(1.3 \times 1.665)$ | Conventional resolution |
+
+---
+
+### Amplitude Modes Reference
+
+| Mode | Amplitude | Description |
+|------|-----------|-------------|
+| Peng1996 | $A = \sum_{i=1}^5 a_i$ | Sum of Gaussian coefficients ($f_e(0)$) |
+| Atomic Number | $A = Z$ | Direct atomic number scaling |
+| ChimeraX | $A = Z$ | Same as atomic number, with ChimeraX normalization |
+| EMmer | $A = \sum_{i=1}^5 a_i \exp(-(b_i + B_{\text{eff}})s^2)$ | International Tables with blur |
+
+---
+
+### Example Parameter Combinations
+
+Default Peng1996 mode:
+
+pdb2mrc -i 1ake.pdb -o 1ake.mrc -r 8.0 -c rayleigh -a peng1996
 
 
+ChimeraX with custom cutoff:
+
+pdb2mrc -i 1ake.pdb -o 1ake_chx.mrc -r 8.0 --method chimerax --cutoff 3.0
+
+
+Situs with Epanechnikov kernel:
+
+pdb2mrc -i 1ake.pdb -o 1ake_situs.mrc --method situs --situs-kernel-type epanechnikov --situs-halfmax 8.0
+
+EMmer with manual blur:
+
+pdb2mrc -i 1ake.pdb -o 1ake_emmer.mrc --method emmer -r 8.0 --emmer-blur 25.0 --emmer-no-align
+
+
+Full filtering options:
+
+pdb2mrc -i 1ake.pdb -o 1ake_filtered.mrc -r 6.0 --filter-h --filter-w -b 50.0
 
 
 
