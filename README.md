@@ -401,24 +401,24 @@ This produces maps compatible with Refmac sharpening/blurring conventions [Mursh
 
 | Parameter | Format | Description |
 |-----------|--------|-------------|
-| `-i FILE` | string | Input PDB file path |
-| `-o FILE` | string | Output MRC file path |
+| `-i` | string | Input PDB file path |
+| `-o` | string | Output MRC file path |
 
 ### Method Selection
 
 | Parameter | Format | Description |
 |-----------|--------|-------------|
-| `--method STR` | string | Generation method: `peng1996` (default), `chimerax`, `situs`, `emmer` |
+| `--method` | string | Generation method: `peng1996` (default), `chimerax`, `situs`, `emmer` |
 
 ### Common Parameters
 
 | Parameter | Format | Default | Description |
 |-----------|--------|---------|-------------|
-| `-r FLOAT` | float | 6.0 | Target resolution in Ångströms |
-| `-c STR` | string | `rayleigh` | Resolution criterion: `rayleigh`, `chimerax`, `eman2`, `fsc0143`, `fsc05` |
-| `-s FLOAT` | float | auto | Voxel size in Å (default = resolution/3) |
-| `-p FLOAT` | float | 3.0 | Padding around atoms in Å |
-| `-t INT` | int | 0 | Number of OpenMP threads (0 = auto) |
+| `-r` | float | 6.0 | Target resolution in Ångströms |
+| `-c` | string | `rayleigh` | Resolution criterion: `rayleigh`, `chimerax`, `eman2`, `fsc0143`, `fsc05` |
+| `-s` | float | auto | Voxel size in Å (default = resolution/3) |
+| `-p` | float | 3.0 | Padding around atoms in Å |
+| `-t` | int | 0 | Number of OpenMP threads (0 = auto) |
 | `-v` | flag | - | Verbose output |
 | `-q` | flag | - | Quiet mode |
 | `-h` | flag | - | Show help message |
@@ -436,14 +436,14 @@ This produces maps compatible with Refmac sharpening/blurring conventions [Mursh
 
 | Parameter | Format | Default | Description |
 |-----------|--------|---------|-------------|
-| `-a STR` | string | `peng1996` | Amplitude mode: `peng1996` or `atomic-number` |
+| `-a` | string | `peng1996` | Amplitude mode: `peng1996` or `atomic-number` |
 | `--no-bfac` | flag | - | Ignore B-factors from PDB file |
 
 ### ChimeraX-Specific Parameters
 
 | Parameter | Format | Default | Description |
 |-----------|--------|---------|-------------|
-| `--cutoff FLOAT` | float | 5.0 | Cutoff range in sigma ($n\sigma$) |
+| `--cutoff` | float | 5.0 | Cutoff range in sigma ($n\sigma$) |
 | `--no-norm` | flag | - | Skip final normalization to maximum 1.0 |
 
 The ChimeraX method uses the following relationships:
@@ -458,16 +458,16 @@ The ChimeraX method uses the following relationships:
 
 | Parameter | Format | Default | Description |
 |-----------|--------|---------|-------------|
-| `--situs-kernel NUM` | int (1-5) | 1 | Kernel type by number |
-| `--situs-kernel-type TYPE` | string | `gaussian` | Kernel type by name |
-| `--situs-halfmax FLOAT` | float | - | Set resolution as half-max radius (positive value) |
-| `--situs-2sigma FLOAT` | float | - | Set resolution as $2\sigma$ (negative value) |
-| `--situs-margin INT` | int | 2 | Margin voxels around structure |
+| `--situs-kernel` | int (1-5) | 1 | Kernel type by number |
+| `--situs-kernel-type` | string | `gaussian` | Kernel type by name |
+| `--situs-halfmax` | float | - | Set resolution as half-max radius (positive value) |
+| `--situs-2sigma` | float | - | Set resolution as $2\sigma$ (negative value) |
+| `--situs-margin` | int | 2 | Margin voxels around structure |
 | `--situs-mass` | flag | on | Use atomic mass weighting |
 | `--situs-no-mass` | flag | - | Use unit weights (each atom = 1) |
 | `--situs-correction` | flag | on | Apply lattice smoothing correction |
 | `--situs-no-correction` | flag | - | Skip lattice correction |
-| `--situs-amplitude FLOAT` | float | 1.0 | Kernel amplitude scaling factor |
+| `--situs-amplitude` | float | 1.0 | Kernel amplitude scaling factor |
 
 #### Situs Kernel Types
 
@@ -494,11 +494,11 @@ The ChimeraX method uses the following relationships:
 | `--emmer-no-align` | flag | - | Skip output alignment |
 | `--emmer-refmac-blur` | flag | on | Apply Refmac-compatible blur |
 | `--emmer-no-blur` | flag | - | Skip Refmac blur |
-| `--emmer-blur FLOAT` | float | 0.0 | Manual blur value in Å² (0 = auto) |
+| `--emmer-blur` | float | 0.0 | Manual blur value in Å² (0 = auto) |
 | `--emmer-symmetry` | flag | on | Apply space group symmetry |
 | `--emmer-no-symmetry` | flag | - | Skip symmetry expansion |
-| `--emmer-cutoff FLOAT` | float | 1e-5 | Density cutoff for radius determination |
-| `--emmer-rate FLOAT` | float | 1.5 | Shannon rate for grid spacing |
+| `--emmer-cutoff` | float | 1e-5 | Density cutoff for radius determination |
+| `--emmer-rate` | float | 1.5 | Shannon rate for grid spacing |
 
 #### EMmer Blur Calculation
 
