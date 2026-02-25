@@ -94,7 +94,7 @@ where:
 
 Since convolution is associative and commutative, we can group these operations to maximize computational efficiency. Our implementation uses a two-step approach that separates per-atom variations from element-specific and global operations.
 
-### Step 1: Delta Function + B-factor Blurring (Combined)
+## Step 1: Delta Function + B-factor Blurring (Combined)
 
 Instead of treating the delta function and B-factor blurring as separate steps, we combine them into a single operation for each atom. For atom $j$ with B-factor $B_j$, its contribution to the map is:
 
@@ -102,7 +102,42 @@ $$\rho_j(\mathbf{r}) = \delta(\mathbf{r} - \mathbf{r}_j) * G_{B_j}(\mathbf{r}) =
 
 where $\sigma_{B_j}^2 = \frac{B_j}{8\pi^2}$.
 
-For each atom, we distribute its contribution to nearby grid points using a Gaussian whose width is determined by its B-factor. The weight assigned to each voxel is calculated by integrating the Gaussian over the voxel volume, which can be done analytically using error functions. This ensures that the sum of all weights for an atom exactly equals its occupancy.
+For each atom, we distribute its contribution to nearby grid points within a cutoff radius (typically 5σ). The weight assigned to each voxel can be calculated in two ways, offering a trade-off between accuracy and speed.
+
+### Option A: Analytical Integration Using Error Functions (Default)
+
+The exact weight is obtained by integrating the Gaussian over the voxel volume. For a voxel with boundaries $[x_i, x_i+h]$, $[y_j, y_j+h]$, $[z_k, z_k+h]$, the integral factorizes into three one-dimensional integrals:
+
+$$w_{ijk} = \text{occupancy} \times I_x(i) \times I_y(j) \times I_z(k)$$
+
+where each one-dimensional integral is:
+
+$$I_x(i) = \int_{x_i}^{x_i+h} \frac{1}{\sqrt{2\pi\sigma_B^2}} \exp\left(-\frac{(x - x_{\text{atom}})^2}{2\sigma_B^2}\right) dx$$
+
+This integral has an analytical solution using the error function:
+
+$$I_x(i) = \frac{1}{2} \left[ \text{erf}\left(\frac{x_i+h - x_{\text{atom}}}{\sqrt{2}\sigma_B}\right) - \text{erf}\left(\frac{x_i - x_{\text{atom}}}{\sqrt{2}\sigma_B}\right) \right]$$
+
+Similarly for $I_y(j)$ and $I_z(k)$. The product of these three terms gives the exact fraction of the Gaussian density contained within the voxel. This approach guarantees that the sum of all weights for an atom exactly equals its occupancy, regardless of grid spacing.
+
+### Option B: Point Sampling (Faster)
+
+For faster computation, the weight can be approximated by evaluating the Gaussian at the grid point and multiplying by the voxel volume:
+
+$$w_{ijk} \approx \text{occupancy} \times \frac{1}{(2\pi\sigma_B^2)^{3/2}} \exp\left(-\frac{|\mathbf{r}_{ijk} - \mathbf{r}_{\text{atom}}|^2}{2\sigma_B^2}\right) \times h^3$$
+
+where $\mathbf{r}_{ijk} = (x_i, y_j, z_k)$ is the grid point position. This approximation becomes more accurate as the grid spacing decreases relative to σ. For typical grids where $h < \sigma/2$, the error is negligible.
+
+### Comparison of Approaches
+
+| Aspect | Analytical Integration (erf) | Point Sampling |
+|--------|------------------------------|----------------|
+| **Accuracy** | Exact (machine precision) | Approximate, $O(h^2)$ error |
+| **Speed** | Slower (requires erf calls) | Faster (simple exp evaluation) |
+| **Occupancy conservation** | Exact | Approximate |
+| **When to use** | Default, high accuracy needs | Time-critical applications, fine grids |
+
+The implementation allows users to choose between these options via a runtime flag, with analytical integration as the default for maximum accuracy.
 
 This creates a **B-factor blurred map** $\rho_{B,\text{element}}(\mathbf{r})$ for each element type, where each atom's contribution is already spread according to its thermal motion. Importantly, this map still represents the density at **infinite resolution** - only thermal motion has been applied.
 
