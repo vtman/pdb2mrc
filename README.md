@@ -213,3 +213,30 @@ make -j4
 
 # Install (optional)
 make install
+
+
+## References
+
+1. **International Tables for Crystallography Vol. C** (2006). Prince, E., ed. *International Tables for Crystallography*, Vol. C, 3rd ed. Springer.
+   [DOI: 10.1107/97809553602060000103](https://doi.org/10.1107/97809553602060000103)
+
+2. **Peng1996**: Peng, L.-M., Ren, G., Dudarev, S.L., & Whelan, M.J. (1996). *Robust parameterization of elastic and absorptive electron atomic scattering factors*. Acta Crystallographica Section A, 52(2), 257-276.
+   [DOI: 10.1107/S0108767395012671](https://doi.org/10.1107/S0108767395012671)
+
+3. **ChimeraX**: Goddard, T.D., Huang, C.C., Meng, E.C., Pettersen, E.F., Couch, G.S., Morris, J.H., & Ferrin, T.E. (2018). *UCSF ChimeraX: Meeting modern challenges in visualization and analysis*. Protein Science, 27(1), 14-25.
+   [DOI: 10.1002/pro.3235](https://doi.org/10.1002/pro.3235)
+
+4. **Situs**: Wriggers, W. (2010). *Using Situs for the integration of multi-resolution structures*. Biophysical Reviews, 2(1), 21-27.
+   [DOI: 10.1007/s12551-009-0024-5](https://doi.org/10.1007/s12551-009-0024-5)
+
+5. **GEMMI**: Wojdyr, M. (2022). *GEMMI: A library for structural biology*. Journal of Open Source Software, 7(73), 4200.
+   [DOI: 10.21105/joss.04200](https://doi.org/10.21105/joss.04200)
+
+6. **Refmac**: Murshudov, G.N., Vagin, A.A., & Dodson, E.J. (1997). *Refinement of macromolecular structures by the maximum-likelihood method*. Acta Crystallographica Section D, 53(3), 240-255.
+   [DOI: 10.1107/S0907444996012255](https://doi.org/10.1107/S0907444996012255)
+
+7. **Resolution Criteria**: Rosenthal, P.B., & Henderson, R. (2003). *Optimal determination of particle orientation, absolute hand, and contrast loss in single-particle electron cryomicroscopy*. Journal of Molecular Biology, 333(4), 721-745.
+   [DOI: 10.1016/j.jmb.2003.07.013](https://doi.org/10.1016/j.jmb.2003.07.013)
+
+8. **EMAN2**: Tang, G., Peng, L., Baldwin, P.R., Mann, D.S., Jiang, W., Rees, I., & Ludtke, S.J. (2007). *EMAN2: An extensible image processing suite for electron microscopy*. Journal of Structural Biology, 157(1), 38-46.
+   [DOI: 10.1016/j.jsb.2006.05.009](https://doi.org/10.1016/j.jsb.2006.05.009)
