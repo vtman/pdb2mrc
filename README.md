@@ -22,18 +22,19 @@ A high-performance C++ library and command-line tool for generating cryo-EM dens
 - [License](#license)
 - [Acknowledgments](#acknowledgments)
 
+
 ## Features
 
 - **Multiple Real-Space Map Generation Methods**:
-  - **EMmer/GEMMI**: Method based on the complete International Tables Vol. C coefficients (c4322.lib) with Refmac-compatible blur, inspired by the GEMMI library [Wojdyr2022]
-  - **Peng1996**: The classic 5-Gaussian parameterization of electron scattering factors from International Tables for Crystallography [Peng1996] with optional per-element averaged B-factor weighting
-  - **ChimeraX**: UCSF ChimeraX `molmap` algorithm, which applies a single Gaussian blur to atomic coordinates [Goddard2018, Pettersen2020]
-  - **Situs**: Density projection method with multiple kernel choices (Gaussian, triangular, Epanechnikov) and configurable resolution definitions [Wriggers2010, Wriggers1999]
+  - **EMmer/GEMMI**: Method based on the complete International Tables Vol. C coefficients (c4322.lib) with Refmac-compatible blur, inspired by the GEMMI library [Wojdyr2022] — **uses per-element averaged B-factors**
+  - **Peng1996**: The classic 5-Gaussian parameterization of electron scattering factors from International Tables for Crystallography [Peng1996] — **optionally uses per-element averaged B-factors with `--use-bfac`**
+  - **ChimeraX**: UCSF ChimeraX `molmap` algorithm, which applies a single Gaussian blur to atomic coordinates [Goddard2018, Pettersen2020] — **does NOT use B-factors**
+  - **Situs**: Density projection method with multiple kernel choices (Gaussian, triangular, Epanechnikov) and configurable resolution definitions [Wriggers2010, Wriggers1999] — **does NOT use B-factors**
 
 - **B-factor Analysis**:
-  - Automatic calculation of per-element and global B-factor statistics
+  - Automatic calculation of per-element and global B-factor statistics for ALL methods (informational only)
   - Conversion of mean B-factor to equivalent resolution for all criteria (Rayleigh, ChimeraX, EMAN2)
-  - Clear indication of B-factor usage per method
+  - Clear indication of whether B-factors actually affect the generated map
 
 - **Automatic Filtering**:
   - Water molecules (HOH, WAT, H2O, TIP) are ALWAYS filtered out
@@ -66,17 +67,23 @@ Different software packages use slightly different criteria, all of which are im
 
 ### Default Method (Peng1996)
 
-The default map generation method in pdb2mrc treats density generation as a sequence of convolutions, each handling a different physical effect. This modular approach ensures both accuracy and computational efficiency.
+The default map generation method in pdb2mrc treats density generation as a sequence of convolutions, each handling a different physical effect.
 
-#### B-factor Handling
+#### B-factor Handling in Peng1996
 
-When B-factors are enabled with `--use-bfac`, the method uses **per-element averaged B-factors** rather than per-atom values. For each element type (e.g., all carbon atoms), the mean B-factor is calculated and applied uniformly to all atoms of that element:
+**By default, B-factors are NOT applied.** The map is generated using only:
+- Element-specific scattering factors (from Peng1996 coefficients)
+- Resolution-dependent Gaussian blur (based on the chosen criterion)
+
+When the `--use-bfac` flag is enabled, the method uses **per-element averaged B-factors** rather than per-atom values. For each element type (e.g., all carbon atoms), the mean B-factor is calculated and applied uniformly to all atoms of that element:
 
 $$\sigma_{B,\text{element}}^2 = \frac{\langle B \rangle_{\text{element}}}{8\pi^2}$$
 
-This approach provides a good balance between accuracy and computational efficiency, as it allows precomputation of kernels per element type while still capturing the overall thermal motion of different atomic species.
+This averaged B-factor is then combined with the resolution blur in Fourier space:
 
-If B-factors are not enabled (default), a uniform default value of 20.0 Å² is used for all atoms.
+$$K_{\text{combined}}(s) = \left( \sum_{i=1}^{5} a_i \exp\left(-\frac{b_i s^2}{4\pi^2}\right) \right) \times \exp\left(-\frac{(\sigma_{\text{res}}^2 + \sigma_{B,\text{element}}^2) s^2}{2}\right)$$
+
+This approach maintains computational efficiency (one kernel per element type) while accounting for thermal motion when requested.
 
 #### The Convolution Chain
 
@@ -186,7 +193,21 @@ Proper normalisation is critical for physically meaningful maps:
 
 ### EMmer / GEMMI Method
 
-The EMmer method, inspired by the GEMMI library [Wojdyr2022], uses the complete International Tables Vol. C coefficients to generate real-space density maps through direct summation of Gaussian functions. This approach provides highly accurate electron scattering factors by incorporating the full 5-Gaussian parameterization with temperature factor optimization.
+The EMmer method, inspired by the GEMMI library [Wojdyr2022], uses the complete International Tables Vol. C coefficients to generate real-space density maps through direct summation of Gaussian functions.
+
+**B-factors are ALWAYS used in this method** and are averaged per element type. For each element, the effective B-factor combines the atomic B-factors from the PDB with optional Refmac-compatible blur:
+
+$$B_{\text{eff}} = \langle B \rangle_{\text{element}} + B_{\text{blur}}$$
+
+where the optional blur term (enabled with `--emmer-refmac-blur`) is calculated as:
+
+$$B_{\text{blur}} = \frac{8\pi^2}{1.1} \left(\frac{d_{\min}}{2R}\right)^2 - B_{\min}$$
+
+The Gaussian widths then become:
+
+$$\sigma_i^2 = \frac{b_i}{4\pi^2} + \frac{B_{\text{eff}}}{8\pi^2}$$
+
+This ensures that thermal motion is properly accounted for in the final density map.
 
 #### Gaussian Coefficient Database
 
@@ -251,22 +272,19 @@ For compatibility with standard visualization tools, the EMmer method includes a
 
 ***
 
-
-
 ### ChimeraX molmap Method
 
-The ChimeraX method implemented here replicates the `molmap` command from UCSF ChimeraX [Goddard2018, Pettersen2020], which generates density maps by placing Gaussian functions at each atom position. The implementation is based on the actual ChimeraX C++ and Python code [ChimeraXSource], ensuring compatibility with maps produced by ChimeraX.
+The ChimeraX method implemented here replicates the `molmap` command from UCSF ChimeraX [Goddard2018, Pettersen2020], which generates density maps by placing Gaussian functions at each atom position.
 
-#### Mathematical Formulation
-
-In the ChimeraX `molmap` algorithm, each atom contributes a normalized 3D Gaussian density:
+**Important: B-factors are completely ignored in this method.** Each atom contributes a normalized 3D Gaussian density based solely on its atomic number:
 
 $$\rho_i(\mathbf{r}) = \frac{Z_i}{(2\pi\sigma^2)^{3/2}} \exp\left(-\frac{|\mathbf{r} - \mathbf{r}_i|^2}{2\sigma^2}\right)$$
 
-where:
-- $Z_i$ is the atomic number (element number) used as the scattering power
-- $\mathbf{r}_i$ is the atom position in Ångströms
-- $\sigma$ is the standard deviation of the Gaussian, determined by the target resolution
+where $Z_i$ is the atomic number and $\sigma$ is determined solely by the target resolution:
+
+$$\sigma = \frac{R}{\pi\sqrt{2}} \approx 0.225R$$
+
+No thermal motion (B-factors) is included in the calculation.
 
 The total density at any grid point is the sum of contributions from all atoms within a cutoff distance:
 
@@ -333,7 +351,15 @@ This mode produces maps where isosurfaces approximate the van der Waals envelope
 
 ### Situs Method
 
-The Situs method implemented here follows the real-space convolution approach established in the Situs package [Wriggers2010, Wriggers1999]. It generates a density map by first projecting atomic structures onto a grid and then smoothing the result with a kernel function. This two-step process is designed to produce maps that correspond to a user-specified resolution.
+The Situs method implemented here follows the real-space convolution approach established in the Situs package [Wriggers2010, Wriggers1999].
+
+**Important: B-factors are completely ignored in this method.** The map is generated by:
+
+1. **Projection to Lattice**: Atoms are projected onto a cubic lattice using trilinear interpolation, with weights determined either by atomic mass (`--situs-mass`) or unit weight (`--situs-no-mass`).
+
+2. **Kernel Convolution**: The lattice is then convolved with the selected 3D kernel, where the kernel width is determined solely by the target resolution.
+
+No thermal motion parameters affect the calculation.
 
 #### Kernel Functions
 
@@ -374,24 +400,11 @@ $$\sigma_{\text{corrected}}^2 = \sigma_{\text{target}}^2 - \sigma_{\text{lattice
 
 where $\sigma_{\text{target}}$ is the width required to achieve the desired resolution, and $\sigma_{\text{lattice}}$ is the standard deviation of the point-spread function introduced by the trilinear projection. This correction ensures that the final map more accurately matches the target resolution [Wriggers2010, Wriggers1999].
 
-### EMmer / GEMMI Method
 
-This method, inspired by the GEMMI library [Wojdyr2022] and EMmer, uses the complete International Tables Vol. C coefficients (c4322.lib) with Refmac-compatible blur [Murshudov1997]:
+***
 
-The effective B-factor including resolution-dependent blur:
 
-$$B_{\text{eff}} = \frac{8\pi^2}{1.1} \left(\frac{d_{\min}}{2R}\right)^2 - B_{\min}$$
 
-where:
-- $d_{\min}$ is the high-resolution limit (target resolution)
-- $R = 1.5$ is the Shannon rate (default)
-- $B_{\min}$ is the minimum B-factor in the structure
-
-The atomic scattering factors are then:
-
-$$f_e(s) = \sum_{i=1}^{5} a_i \exp\left(-(b_i + B_{\text{eff}}) s^2\right)$$
-
-This produces maps compatible with Refmac sharpening/blurring conventions [Murshudov1997, Murshudov2011], making them suitable for refinement and validation in crystallographic and cryo-EM workflows. The coefficients used in this method are taken directly from the International Tables Vol. C [InternationalTables2006] as compiled in the GEMMI library's c4322.lib [Wojdyr2022].
 
 ## Input Parameters
 
