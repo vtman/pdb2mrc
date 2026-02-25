@@ -179,50 +179,19 @@ For each element type, we:
 
 
 
-#### Why This Grouping is Optimal
+#### Kernel Normalisation
 
-| Step | Domain | Handles | Advantages |
-|------|--------|---------|------------|
-| **Step 1: δ + G_B** | Real space | Per-atom B-factors | • Natural for varying B-values<br>• Adaptive neighborhood based on individual B-factors<br>• Exact occupancy conservation |
-| **Step 2: K_element + G_res** | Fourier space | Element kernels + resolution | • Single kernel per element type<br>• Efficient FFT-based convolution<br>• Resolution blur applied uniformly |
+Proper normalisation is critical for physically meaningful maps:
 
-This separation minimizes computational cost while maintaining physical accuracy. The expensive per-atom operations are confined to real space and scale linearly with atom count, while the FFT operations scale as $O(E \times N \log N)$ where $E$ is the number of unique elements (typically 5-10) and $N$ is the grid size.
+1. **B-factor kernel**: After discretisation, the sum of weights assigned to all grid points for a single atom exactly equals its occupancy. This is guaranteed by the analytic integration over voxel volumes.
 
-#### Kernel Normalization
-
-Proper normalization is critical for physically meaningful maps:
-
-1. **B-factor kernel**: After discretization, the sum of weights assigned to all grid points for a single atom exactly equals its occupancy. This is guaranteed by the analytic integration over voxel volumes.
-
-2. **Combined kernel** (element + resolution): After discretization onto the grid, we normalize so that the sum of all kernel values equals the element's scattering power at zero angle:
+2. **Combined kernel** (element + resolution): After discretisation onto the grid, we normalize so that the sum of all kernel values equals the element's scattering power at zero angle:
    
    $$\sum_{i,j,k} K_{\text{combined}}^{\text{grid}}(i,j,k) = f_e(0) = \sum_{i=1}^{5} a_i$$
 
    This is achieved by evaluating the continuous kernel at grid points, computing the total sum $S$, then scaling all values by $f_e(0)/S$.
 
-#### Verification: Conservation of Total Density
 
-After both steps, the total density in the map satisfies a fundamental conservation law:
-
-$$\iiint \rho_{\text{final}}(\mathbf{r}) \, d^3\mathbf{r} = \sum_{\text{atoms}} \text{occupancy}_j \times f_e(0)_{\text{element}_j}$$
-
-This means the map integral equals the sum of each atom's occupancy multiplied by its element's scattering power. This serves as a key validation check in our implementation.
-
-#### Flexibility Through Modular Design
-
-The two-step approach offers significant practical advantages:
-
-| Scenario | Step 1 (B-factors) | Step 2 (Element+Resolution) |
-|----------|-------------------|------------------------------|
-| No B-factors, single resolution | Fast 8-point trilinear interpolation | One FFT per element |
-| With B-factors, single resolution | Full Gaussian integration (slower but accurate) | One FFT per element |
-| Multiple resolutions from same data | Compute once (expensive) | Recompute with different $\sigma_{\text{res}}$ (cheap FFTs) |
-
-For example, to generate maps at 5Å, 8Å, and 10Å from the same structure:
-- Run Step 1 once (the expensive per-atom B-factor blurring)
-- Run Step 2 three times with different resolution kernels
-
-This makes multi-resolution analysis extremely efficient, enabling rapid generation of map series for multi-scale fitting or resolution-dependence studies.
 
 ***
 
