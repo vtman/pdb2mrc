@@ -116,90 +116,105 @@ Our implementation uses two distinct tables from the Peng1996 paper:
 
 
 
+## ChimeraX molmap Method
 
+The ChimeraX method implemented here replicates the `molmap` command from UCSF ChimeraX [1,2], which generates density maps by placing Gaussian functions at each atom position. The implementation is based on the actual ChimeraX C++ and Python code [3], ensuring compatibility with maps produced by ChimeraX.
 
-### ChimeraX molmap Method
-
-The ChimeraX method implemented here replicates the `molmap` command from UCSF ChimeraX [3], which generates density maps by placing a Gaussian function at each atom position. This approach is computationally efficient and produces maps that closely match those from the ChimeraX visualization software.
-
-#### Mathematical Formulation
+### Mathematical Formulation
 
 In the ChimeraX `molmap` algorithm, each atom contributes a normalized 3D Gaussian density:
 
 $$ \rho_i(\mathbf{r}) = \frac{Z_i}{(2\pi\sigma^2)^{3/2}} \exp\left(-\frac{|\mathbf{r} - \mathbf{r}_i|^2}{2\sigma^2}\right) $$
 
 where:
-- $Z_i$ is the atomic number (used as the scattering power)
-- $\mathbf{r}_i$ is the atom position
+- $Z_i$ is the atomic number (element number) used as the scattering power
+- $\mathbf{r}_i$ is the atom position in Ångströms
 - $\sigma$ is the standard deviation of the Gaussian, determined by the target resolution
 
-The total density at any point is the sum of contributions from all atoms within a cutoff distance:
+The total density at any grid point is the sum of contributions from all atoms within a cutoff distance:
 
 $$ \rho(\mathbf{r}) = \sum_{i: |\mathbf{r} - \mathbf{r}_i| < n\sigma} \rho_i(\mathbf{r}) $$
 
-with the default cutoff $n = 5$ standard deviations.
+with the default cutoff $n = 5$ standard deviations, as implemented in the C++ function `sum_of_gaussians()` [3].
 
-#### Resolution to Sigma Conversion
+### Resolution to Sigma Conversion
 
 The relationship between the target resolution $R$ and the Gaussian width $\sigma$ in ChimeraX is:
 
 $$ \sigma = \frac{R}{\pi\sqrt{2}} \approx 0.225R $$
 
-This makes the Fourier transform of the distribution fall to $1/e$ of its maximum value at wavenumber $1/R$ [3]. Alternative sigma factors are also supported:
+This relationship is defined by the `sigma_factor` parameter, with the default value $1/(\pi\sqrt{2})$. The Fourier transform of the Gaussian falls to $1/e$ of its maximum at wavenumber $1/R$ [2].
 
-| Criterion | Formula | Description |
+### Grid Generation
+
+The map grid is generated using the following steps:
+
+1. **Bounding Box**: Calculate the minimum bounding box of all atom coordinates: $x_{min} = min_i(x_i)$, $x_{max} = max_i(x_i)$ (and similarly for $y$ and $z$ dimensions).
+
+2. **Padding**: Add padding on all sides: $x_{\min} \leftarrow x_{\min} - p$, $x_{\max} \leftarrow x_{\max} + p$, where the default padding is $p = 3R$ (controlled by `edge_padding`).
+
+3. **Grid Dimensions**: Calculate the number of grid points: $n_x = \left\lceil \frac{x_{\max} - x_{\min}}{s} \right\rceil + 1$, where the grid spacing $s$ defaults to $R/3$ (controlled by `grid_spacing`).
+
+4. **Cubic Option**: If `cube=True`, all dimensions are set to the maximum and made even: $n = \max(n_x, n_y, n_z)$, $\leftarrow n + (n \bmod 2)$.
+
+5. **Origin**: Set the grid origin to the minimum coordinates: $r_{origin} = (x_{min}, y_{min}, z_{min})$.
+
+### Core Algorithm Implementation
+
+The core computation in `gaussian.cpp` implements an optimized summation. For each atom, the algorithm:
+
+1. Calculates bounds in grid coordinates: $i_{min} = \lceil i_c - n \cdot \sigma/s \rceil$, $i_{max} = \lfloor i_c + n \cdot \sigma/s \rfloor$.
+
+2. Computes contributions within the bounding box using nested loops ordered for cache efficiency $(k, j, i)$:    
+   $$\rho(i,j,k) \mathrel{+}= Z \cdot \exp\left(-\frac{1}{2}\left[\left(\frac{i-i_c}{\sigma/s}\right)^2 + \left(\frac{j-j_c}{\sigma/s}\right)^2 + \left(\frac{k-k_c}{\sigma/s}\right)^2\right]\right)$$
+
+### Normalization
+
+After summation, the map is normalized by: $\rho_{\text{norm}}(\mathbf{r}) = \rho(\mathbf{r}) \cdot (2\pi)^{-3/2} \sigma^{-3}$.
+
+This normalization ensures that the integral of each Gaussian equals its atomic number $Z$. The final map is then scaled to a maximum value of 1.0 for visualization compatibility [2].
+
+### Balls Mode
+
+An alternative representation using "balls" with Gaussian falloff is available when `balls=True`. In this mode, each atom contributes a constant value of 1 within its van der Waals radius $r_{\text{vdW}}$, with a Gaussian falloff outside:
+
+$$ \rho_i(\mathbf{r}) = \begin{cases}
+1 & |\mathbf{r} - \mathbf{r}_i| \leq r_{\text{vdW}} \\
+\exp\left(-\frac{1}{2}\left(\frac{|\mathbf{r} - \mathbf{r}_i| - r_{\text{vdW}}}{\sigma}\right)^2\right) & |\mathbf{r} - \mathbf{r}_i| > r_{\text{vdW}}
+\end{cases} $$
+
+This mode produces maps where isosurfaces approximate the van der Waals envelope when contoured at low levels [2].
+
+### Input Parameters
+
+The implementation in `molmap.py` exposes the following parameters:
+
+| Parameter | Default | Description |
 |-----------|---------|-------------|
-| Default | $\sigma = R/(\pi\sqrt{2})$ | FT falls to $1/e$ at wavenumber $1/R$ |
-| Half-max in FT | $\sigma = R/(\pi\sqrt{2/\ln 2})$ | FT falls to half-max at wavenumber $1/R$ |
-| $1/e$ in real space | $\sigma = R/(2\sqrt{2})$ | Gaussian width at $1/e$ height equals $R$ |
-| Half-max in real space | $\sigma = R/(2\sqrt{2\ln 2})$ | Gaussian width at half height equals $R$ |
+| `resolution` | required | Target resolution in Ångströms |
+| `grid_spacing` | `resolution/3` | Voxel size in Å |
+| `edge_padding` | `3*resolution` | Extra space around atoms in Å |
+| `cube` | `False` | Force cubic grid with even dimensions |
+| `cutoff_range` | `5.0` | Cutoff in standard deviations ($n$) |
+| `sigma_factor` | $1/(\pi\sqrt{2})$ | $\sigma / R$ conversion factor |
+| `balls` | `False` | Use balls mode instead of Gaussians |
+| `display_threshold` | `0.95` | Initial contour level as fraction of total density |
 
-#### Grid Parameters
+### Relation to ChimeraX
 
-The map grid is determined by three key parameters:
+This implementation reproduces the exact behavior of ChimeraX's `molmap` command, as described in the ChimeraX documentation:
 
-1. **Grid Spacing** ($s$): The separation between grid points, defaulting to $R/3$. This can be specified explicitly with the `gridSpacing` option.
+> "The molmap command creates a density map from atomic structures by placing a Gaussian function at each atom position. The width of the Gaussian is determined by the resolution, with $\sigma = \text{resolution}/(\pi\sqrt{2})$. The map is normalized so that the sum of densities equals the total atomic number, and the maximum density is scaled to 1 for display." [4]
 
-2. **Edge Padding** ($p$): The offset from the atom bounding box to the map boundaries, defaulting to $3R$. Each face of the volume is offset outward by $p$:
-$x_{min} = \min_i(x_i) - p$,  $x_{max} = \max_i(x_i) + p$.
+### References
 
-(and similarly for $y$ and $z$ dimensions).
+1. **ChimeraX**: Goddard, T.D., Huang, C.C., Meng, E.C., Pettersen, E.F., Couch, G.S., Morris, J.H., & Ferrin, T.E. (2018). *UCSF ChimeraX: Meeting modern challenges in visualization and analysis*. Protein Science, 27(1), 14-25. [DOI: 10.1002/pro.3235](https://doi.org/10.1002/pro.3235)
 
-3. **Cube Option**: Optionally forces the grid to have the same number of points in all dimensions, with even dimensions preferred.
+2. **ChimeraX Overview**: Pettersen, E.F., Goddard, T.D., Huang, C.C., Meng, E.C., Couch, G.S., Croll, T.I., Morris, J.H., & Ferrin, T.E. (2020). *UCSF ChimeraX: Structure visualization for researchers, educators, and developers*. Protein Science, 30(1), 70-82. [DOI: 10.1002/pro.3943](https://doi.org/10.1002/pro.3943)
 
-#### Implementation Details
+3. **ChimeraX Source Code**: Gaussian summation implementation. *UCSF ChimeraX repository*, gaussian.cpp and molmap.py. [https://github.com/ucsf-chimerax/chimerax](https://github.com/ucsf-chimerax/chimerax)
 
-The implementation in `chimerax_generator.cpp` follows the ChimeraX C++ implementation closely:
-
-1. **Coordinate Transformation**: Atom coordinates are converted to grid indices using:
-   $i = \frac{x - x_{\text{origin}}}{s}$, where $s$ is the voxel spacing.
-
-2. **Cutoff Optimization**: For computational efficiency, each atom only contributes to voxels within a sphere of radius $n\sigma$. The bounds for each atom are calculated as:
-   $i_{\text{min}} = \lceil i_c - n\sigma/s \rceil$, $i_{\text{max}} = \lfloor i_c + n\sigma/s \rfloor$.
-
-3. **Core Computation**: The contribution to each voxel is:
-   
-   $$\rho(i,j,k) {+}= Z \cdot \exp\left(-\frac{1}{2}\left[\left(\frac{i-i_c}{\sigma/s}\right)^2 + \left(\frac{j-j_c}{\sigma/s}\right)^2 + \left(\frac{k-k_c}{\sigma/s}\right)^2\right]\right)$$
-
-5. **Parallel Processing**: The algorithm is parallelized using OpenMP, with each atom processed independently.
-
-6. **Normalization**: After summation, the map is normalized by:
-   $\rho_{\text{norm}}(\mathbf{r}) = \rho(\mathbf{r}) \cdot (2\pi)^{-3/2} \sigma^{-3}$
-   followed by scaling to a maximum value of 1.0 for visualization compatibility.
-
-#### Relation to ChimeraX
-
-This implementation reproduces the exact behavior of ChimeraX's `molmap` command, which is described in the ChimeraX documentation as:
-
-> "The molmap command creates a density map from atomic structures by placing a Gaussian function at each atom position. The width of the Gaussian is determined by the resolution, with $\sigma = \text{resolution}/(\pi\sqrt{2})$. The map is normalized so that the sum of densities equals the total atomic number, and the maximum density is scaled to 1 for display."
-
-#### References for ChimeraX Method
-
-3. **ChimeraX**: Goddard, T.D., Huang, C.C., Meng, E.C., Pettersen, E.F., Couch, G.S., Morris, J.H., & Ferrin, T.E. (2018). *UCSF ChimeraX: Meeting modern challenges in visualization and analysis*. Protein Science, 27(1), 14-25. [DOI: 10.1002/pro.3235](https://doi.org/10.1002/pro.3235)
-
-13. **ChimeraX molmap Documentation**: UCSF ChimeraX User Documentation. *molmap - Create a density map from atomic models*. [https://www.cgl.ucsf.edu/chimerax/docs/user/commands/molmap.html](https://www.cgl.ucsf.edu/chimerax/docs/user/commands/molmap.html)
-
-
+4. **ChimeraX molmap Documentation**: UCSF ChimeraX User Documentation. *molmap - Create a density map from atomic models*. [https://www.cgl.ucsf.edu/chimerax/docs/user/commands/molmap.html](https://www.cgl.ucsf.edu/chimerax/docs/user/commands/molmap.html)
 
 
 
@@ -465,26 +480,23 @@ The following criteria convert target resolution $R$ to Gaussian sigma $\sigma$:
 
 Default Peng1996 mode:
 
-pdb2mrc -i 1ake.pdb -o 1ake.mrc -r 8.0 -c rayleigh -a peng1996
-
+<tt>pdb2mrc -i 1ake.pdb -o 1ake.mrc -r 8.0 -c rayleigh -a peng1996</tt>
 
 ChimeraX with custom cutoff:
 
-pdb2mrc -i 1ake.pdb -o 1ake_chx.mrc -r 8.0 --method chimerax --cutoff 3.0
-
+<tt>pdb2mrc -i 1ake.pdb -o 1ake_chx.mrc -r 8.0 --method chimerax --cutoff 3.0</tt>
 
 Situs with Epanechnikov kernel:
 
-pdb2mrc -i 1ake.pdb -o 1ake_situs.mrc --method situs --situs-kernel-type epanechnikov --situs-halfmax 8.0
+<tt>pdb2mrc -i 1ake.pdb -o 1ake_situs.mrc --method situs --situs-kernel-type epanechnikov --situs-halfmax 8.0</tt>
 
 EMmer with manual blur:
 
-pdb2mrc -i 1ake.pdb -o 1ake_emmer.mrc --method emmer -r 8.0 --emmer-blur 25.0 --emmer-no-align
-
+<tt>pdb2mrc -i 1ake.pdb -o 1ake_emmer.mrc --method emmer -r 8.0 --emmer-blur 25.0 --emmer-no-align</tt>
 
 Full filtering options:
 
-pdb2mrc -i 1ake.pdb -o 1ake_filtered.mrc -r 6.0 --filter-h --filter-w -b 50.0
+<tt>pdb2mrc -i 1ake.pdb -o 1ake_filtered.mrc -r 6.0 --filter-h --filter-w -b 50.0</tt>
 
 
 
@@ -514,6 +526,4 @@ pdb2mrc -i 1ake.pdb -o 1ake_filtered.mrc -r 6.0 --filter-h --filter-w -b 50.0
 8. **EMAN2**: Tang, G., Peng, L., Baldwin, P.R., Mann, D.S., Jiang, W., Rees, I., & Ludtke, S.J. (2007). *EMAN2: An extensible image processing suite for electron microscopy*. Journal of Structural Biology, 157(1), 38-46.
    [DOI: 10.1016/j.jsb.2006.05.009](https://doi.org/10.1016/j.jsb.2006.05.009)
 
-#### Using Makefiles (Linux/macOS)
 
-After configuring with CMake, you can simply run `make` in the build directory.
