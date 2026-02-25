@@ -14,30 +14,30 @@ A high-performance C++ library and command-line tool for generating cryo-EM dens
   - [ChimeraX molmap Method](#chimerax-molmap-method)
   - [Situs Method](#situs-method)
   - [EMmer / GEMMI Method](#emmer--gemmi-method)
-- [Usage](#usage)
+- [Input Parameters](#input-parameters)
+- [Examples](#examples)
 - [References](#references)
 - [Citation](#citation)
 - [License](#license)
 - [Acknowledgments](#acknowledgments)
 
-
 ## Features
 
 - **Multiple Map Generation Methods**:
-  - **Peng1996**: The classic 5-Gaussian parameterization of electron scattering factors from International Tables for Crystallography [1,2].
-  - **ChimeraX**: UCSF ChimeraX `molmap` algorithm, which applies a single Gaussian blur to atomic coordinates [3].
-  - **Situs**: Density projection method with multiple kernel choices (Gaussian, triangular, Epanechnikov) and configurable resolution definitions [4].
-  - **EMmer**: Method based on the complete International Tables Vol. C coefficients (c4322.lib) with Refmac-compatible blur, inspired by the GEMMI library [5,6].
+  - **Peng1996**: The classic 5-Gaussian parameterization of electron scattering factors from International Tables for Crystallography [Peng1996]
+  - **ChimeraX**: UCSF ChimeraX `molmap` algorithm, which applies a single Gaussian blur to atomic coordinates [Goddard2018, Pettersen2020]
+  - **Situs**: Density projection method with multiple kernel choices (Gaussian, triangular, Epanechnikov) and configurable resolution definitions [Wriggers2010, Wriggers1999]
+  - **EMmer**: Method based on the complete International Tables Vol. C coefficients (c4322.lib) with Refmac-compatible blur, inspired by the GEMMI library [Wojdyr2022]
 
 - **Resolution Criteria**:
-  - Rayleigh criterion: $\sigma = R/1.665$
-  - ChimeraX: $\sigma = R/(\pi\sqrt{2})$
-  - EMAN2: $\sigma = R/(\pi\sqrt{8})$
-  - FSC-based: $R_{FSC=0.143}$ and $R_{FSC=0.5}$ [7]
+  - Rayleigh criterion: $\sigma = R/1.665$ [Rayleigh1879]
+  - ChimeraX: $\sigma = R/(\pi\sqrt{2})$ [Goddard2018]
+  - EMAN2: $\sigma = R/(\pi\sqrt{8})$ [Tang2007]
+  - FSC-based: $R_{FSC=0.143}$ and $R_{FSC=0.5}$ [Rosenthal2003]
 
 - **Amplitude Scaling Modes**:
-  - Peng1996 $f_e(0)$ values (sum of Gaussian coefficients)
-  - Atomic number ($Z$) - EMAN2 style for mass-weighted maps [8]
+  - Peng1996 $f_e(0)$ values (sum of Gaussian coefficients) [Peng1996]
+  - Atomic number ($Z$) - EMAN2 style for mass-weighted maps [Tang2007]
 
 - **Performance Optimizations**:
   - OpenMP parallelization
@@ -47,25 +47,15 @@ A high-performance C++ library and command-line tool for generating cryo-EM dens
 
 - **Input/Output**:
   - PDB format input with filtering options (H removal, B-factor cutoff)
-  - MRC/CCP4 format output (32-bit float)
+  - MRC/CCP4 format output (32-bit float) [Cheng2015]
   - Proper header with origin and voxel size
   - Machine-independent byte ordering
-
-
-
-
-
-
-
-
-
-
 
 ## Theory
 
 ### Resolution Definition
 
-In `pdb2mrc`, we define resolution based on the **two-atom criterion**: two atoms placed at a distance equal to the target resolution, after applying the blurring function, should produce a density map where the two peaks are just barely distinguishable as separate blobs. This follows the Rayleigh criterion in optics:
+In pdb2mrc, we define resolution based on the **two-atom criterion**: two atoms placed at a distance equal to the target resolution, after applying the blurring function, should produce a density map where the two peaks are just barely distinguishable as separate blobs. This follows the Rayleigh criterion in optics [Rayleigh1879]:
 
 $$R_{\text{Rayleigh}} = \frac{0.61\lambda}{\text{NA}}$$
 
@@ -79,15 +69,15 @@ Different software packages use slightly different criteria, which are all suppo
 
 | Criterion | Formula | Reference |
 |-----------|---------|-----------|
-| Rayleigh | $\sigma = R/1.665$ | Standard optics |
-| ChimeraX | $\sigma = R/(\pi\sqrt{2})$ | [3] |
-| EMAN2 | $\sigma = R/(\pi\sqrt{8})$ | [8] |
-| FSC=0.143 | $\sigma = R/(1.1 \times 1.665)$ | [7] |
-| FSC=0.5 | $\sigma = R/(1.3 \times 1.665)$ | Conventional |
+| Rayleigh | $\sigma = R/1.665$ | Rayleigh1879 |
+| ChimeraX | $\sigma = R/(\pi\sqrt{2})$ | Goddard2018 |
+| EMAN2 | $\sigma = R/(\pi\sqrt{8})$ | Tang2007 |
+| FSC=0.143 | $\sigma = R/(1.1 \times 1.665)$ | Rosenthal2003 |
+| FSC=0.5 | $\sigma = R/(1.3 \times 1.665)$ | Rosenthal2003 |
 
 ### Peng1996 / International Tables Method
 
-This method uses the 5-Gaussian parameterization of electron scattering factors from the **International Tables for Crystallography** [1,2]. The scattering factor for an element as a function of resolution is:
+This method uses the 5-Gaussian parameterization of electron scattering factors from the **International Tables for Crystallography** [InternationalTables2006] as parameterized by Peng and colleagues [Peng1996]. The scattering factor for an element as a function of resolution is:
 
 $$f_e(s) = \sum_{i=1}^{5} a_i \exp(-b_i s^2)$$
 
@@ -102,29 +92,22 @@ $$\sigma_i^2 = \frac{b_i}{4\pi^2} + \sigma_{\text{res}}^2$$
 where $\sigma_{\text{res}}$ is determined by the target resolution using the chosen criterion.
 
 Our implementation uses two distinct tables from the Peng1996 paper:
-- **Table 1** (page 260-261): Elastic scattering factors for $s$ up to $2.0 \text{Å}^{-1}$. Used for lower resolution maps.
-- **Table 3** (page 264-265): Elastic scattering factors for $s$ up to $6.0 \text{Å}^{-1}$. Used for higher resolution maps, providing a more accurate representation at larger scattering angles.
+- **Table 1** (pages 260-261): Elastic scattering factors for $s$ up to $2.0 \text{Å}^{-1}$. Used for lower resolution maps.
+- **Table 3** (pages 264-265): Elastic scattering factors for $s$ up to $6.0 \text{Å}^{-1}$. Used for higher resolution maps, providing a more accurate representation at larger scattering angles.
 
 **Amplitude Modes**:
-- **Peng1996**: Uses the sum of coefficients $\sum a_i$ as the atomic scattering power at zero angle.
-- **Atomic Number**: Scales by $Z$ (EMAN2-style), useful for mass-weighted maps where density is proportional to atomic mass.
-
-
-
-
-
-
-
+- **Peng1996**: Uses the sum of coefficients $\sum a_i$ as the atomic scattering power at zero angle [Peng1996].
+- **Atomic Number**: Scales by $Z$ (EMAN2-style), useful for mass-weighted maps where density is proportional to atomic mass [Tang2007].
 
 ### ChimeraX molmap Method
 
-The ChimeraX method implemented here replicates the `molmap` command from UCSF ChimeraX [1,2], which generates density maps by placing Gaussian functions at each atom position. The implementation is based on the actual ChimeraX C++ and Python code [3], ensuring compatibility with maps produced by ChimeraX.
+The ChimeraX method implemented here replicates the `molmap` command from UCSF ChimeraX [Goddard2018, Pettersen2020], which generates density maps by placing Gaussian functions at each atom position. The implementation is based on the actual ChimeraX C++ and Python code [ChimeraXSource], ensuring compatibility with maps produced by ChimeraX.
 
 #### Mathematical Formulation
 
 In the ChimeraX `molmap` algorithm, each atom contributes a normalized 3D Gaussian density:
 
-$$ \rho_i(\mathbf{r}) = \frac{Z_i}{(2\pi\sigma^2)^{3/2}} \exp\left(-\frac{|\mathbf{r} - \mathbf{r}_i|^2}{2\sigma^2}\right) $$
+$$\rho_i(\mathbf{r}) = \frac{Z_i}{(2\pi\sigma^2)^{3/2}} \exp\left(-\frac{|\mathbf{r} - \mathbf{r}_i|^2}{2\sigma^2}\right)$$
 
 where:
 - $Z_i$ is the atomic number (element number) used as the scattering power
@@ -135,153 +118,105 @@ The total density at any grid point is the sum of contributions from all atoms w
 
 $$\rho(\mathbf{r}) = \sum_{i: |\mathbf{r} - \mathbf{r}_i| < n\sigma} \rho_i(\mathbf{r})$$
 
-with the default cutoff $n = 5$ standard deviations, as implemented in the C++ function `sum_of_gaussians()` [3].
+with the default cutoff $n = 5$ standard deviations, as implemented in the C++ function `sum_of_gaussians()` [ChimeraXSource].
 
 #### Resolution to Sigma Conversion
 
 The relationship between the target resolution $R$ and the Gaussian width $\sigma$ in ChimeraX is:
 
-$$ \sigma = \frac{R}{\pi\sqrt{2}} \approx 0.225R $$
+$$\sigma = \frac{R}{\pi\sqrt{2}} \approx 0.225R$$
 
-This relationship is defined by the `sigma_factor` parameter, with the default value $1/(\pi\sqrt{2})$. The Fourier transform of the Gaussian falls to $1/e$ of its maximum at wavenumber $1/R$ [2].
+This relationship is defined by the `sigma_factor` parameter, with the default value $1/(\pi\sqrt{2})$. The Fourier transform of the Gaussian falls to $1/e$ of its maximum at wavenumber $1/R$ [Goddard2018].
 
 #### Grid Generation
 
 The map grid is generated using the following steps:
 
-1. **Bounding Box**: Calculate the minimum bounding box of all atom coordinates: $x_{min} = min_i(x_i)$, $x_{max} = max_i(x_i)$ (and similarly for $y$ and $z$ dimensions).
+1. **Bounding Box**: Calculate the minimum bounding box of all atom coordinates: $x_{\min} = \min_i(x_i)$, $x_{\max} = \max_i(x_i)$ (and similarly for $y$ and $z$ dimensions).
 
 2. **Padding**: Add padding on all sides: $x_{\min} \leftarrow x_{\min} - p$, $x_{\max} \leftarrow x_{\max} + p$, where the default padding is $p = 3R$ (controlled by `edge_padding`).
 
-3. **Grid Dimensions**: Calculate the number of grid points: $n_x = \left\lceil \frac{x_{\max} - x_{\min}}{s} \right\rceil + 1$, where the grid spacing $s$ defaults to $R/3$ (controlled by `grid_spacing`).
+3. **Grid Dimensions**: Calculate the number of grid points: $n_x = \lceil (x_{\max} - x_{\min})/s \rceil + 1$, where the grid spacing $s$ defaults to $R/3$ (controlled by `grid_spacing`).
 
-4. **Cubic Option**: If `cube=True`, all dimensions are set to the maximum and made even: $n = \max(n_x, n_y, n_z)$, $\leftarrow n + (n \bmod 2)$.
+4. **Cubic Option**: If cube=True, all dimensions are set to the maximum and made even: $n = \max(n_x, n_y, n_z)$, $n \leftarrow n + (n \bmod 2)$.
 
-5. **Origin**: Set the grid origin to the minimum coordinates: $r_{origin} = (x_{min}, y_{min}, z_{min})$.
+5. **Origin**: Set the grid origin to the minimum coordinates: $\mathbf{r}_{\text{origin}} = (x_{\min}, y_{\min}, z_{\min})$.
 
 #### Core Algorithm Implementation
 
-The core computation in `gaussian.cpp` implements an optimized summation. For each atom, the algorithm:
+The core computation in `gaussian.cpp` [ChimeraXSource] implements an optimized summation. For each atom, the algorithm:
 
-1. Calculates bounds in grid coordinates: $i_{min} = \lceil i_c - n \cdot \sigma/s \rceil$, $i_{max} = \lfloor i_c + n \cdot \sigma/s \rfloor$.
+1. Calculates bounds in grid coordinates: $i_{\min} = \lceil i_c - n \cdot \sigma/s \rceil$, $i_{\max} = \lfloor i_c + n \cdot \sigma/s \rfloor$.
 
-2. Computes contributions within the bounding box using nested loops ordered for cache efficiency $(k, j, i)$:    
+2. Computes contributions within the bounding box using nested loops ordered for cache efficiency $(k, j, i)$:
+
    $$\rho(i,j,k) \mathrel{+}= Z \cdot \exp\left(-\frac{1}{2}\left[\left(\frac{i-i_c}{\sigma/s}\right)^2 + \left(\frac{j-j_c}{\sigma/s}\right)^2 + \left(\frac{k-k_c}{\sigma/s}\right)^2\right]\right)$$
 
-#### Normalisation
+#### Normalization
 
-After summation, the map is normalized by: $\rho_{\text{norm}}(\mathbf{r}) = \rho(\mathbf{r}) \cdot (2\pi)^{-3/2} \sigma^{-3}$.
+After summation, the map is normalized by:
 
-This normalization ensures that the integral of each Gaussian equals its atomic number $Z$. The final map is then scaled to a maximum value of 1.0 for visualization compatibility [2].
+$$\rho_{\text{norm}}(\mathbf{r}) = \rho(\mathbf{r}) \cdot (2\pi)^{-3/2} \sigma^{-3}$$
+
+This normalization ensures that the integral of each Gaussian equals its atomic number $Z$. The final map is then scaled to a maximum value of 1.0 for visualization compatibility [Pettersen2020].
 
 #### Balls Mode
 
-An alternative representation using "balls" with Gaussian falloff is available when `balls=True`. In this mode, each atom contributes a constant value of 1 within its van der Waals radius $r_{\text{vdW}}$, with a Gaussian falloff outside:
+An alternative representation using "balls" with Gaussian falloff is available when balls=True. In this mode, each atom contributes a constant value of 1 within its van der Waals radius $r_{\text{vdW}}$, with a Gaussian falloff outside:
 
-$$\rho_i(\mathbf{r}) = \begin{cases}
+$$\rho_i(\mathbf{r}) = \begin{cases} 
 1 & |\mathbf{r} - \mathbf{r}_i| \leq r_{\text{vdW}} \\
 \exp\left(-\frac{1}{2}\left(\frac{|\mathbf{r} - \mathbf{r}_i| - r_{\text{vdW}}}{\sigma}\right)^2\right) & |\mathbf{r} - \mathbf{r}_i| > r_{\text{vdW}}
 \end{cases}$$
 
-This mode produces maps where isosurfaces approximate the van der Waals envelope when contoured at low levels [2].
-
-#### Input Parameters
-
-The implementation in `molmap.py` exposes the following parameters:
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `resolution` | required | Target resolution in Ångströms |
-| `grid_spacing` | `resolution/3` | Voxel size in Å |
-| `edge_padding` | `3*resolution` | Extra space around atoms in Å |
-| `cube` | `False` | Force cubic grid with even dimensions |
-| `cutoff_range` | `5.0` | Cutoff in standard deviations ($n$) |
-| `sigma_factor` | $1/(\pi\sqrt{2})$ | $\sigma / R$ conversion factor |
-| `balls` | `False` | Use balls mode instead of Gaussians |
-| `display_threshold` | `0.95` | Initial contour level as fraction of total density |
-
-#### Relation to ChimeraX
-
-This implementation reproduces the exact behavior of ChimeraX's `molmap` command, as described in the ChimeraX documentation:
-
-> "The molmap command creates a density map from atomic structures by placing a Gaussian function at each atom position. The width of the Gaussian is determined by the resolution, with $\sigma = \text{resolution}/(\pi\sqrt{2})$. The map is normalized so that the sum of densities equals the total atomic number, and the maximum density is scaled to 1 for display." [4]
-
-#### References
-
-1. **ChimeraX**: Goddard, T.D., Huang, C.C., Meng, E.C., Pettersen, E.F., Couch, G.S., Morris, J.H., & Ferrin, T.E. (2018). *UCSF ChimeraX: Meeting modern challenges in visualization and analysis*. Protein Science, 27(1), 14-25. [DOI: 10.1002/pro.3235](https://doi.org/10.1002/pro.3235)
-
-2. **ChimeraX Overview**: Pettersen, E.F., Goddard, T.D., Huang, C.C., Meng, E.C., Couch, G.S., Croll, T.I., Morris, J.H., & Ferrin, T.E. (2020). *UCSF ChimeraX: Structure visualization for researchers, educators, and developers*. Protein Science, 30(1), 70-82. [DOI: 10.1002/pro.3943](https://doi.org/10.1002/pro.3943)
-
-3. **ChimeraX Source Code**: Gaussian summation implementation. *UCSF ChimeraX repository*, gaussian.cpp and molmap.py. [https://github.com/ucsf-chimerax/chimerax](https://github.com/ucsf-chimerax/chimerax)
-
-4. **ChimeraX molmap Documentation**: UCSF ChimeraX User Documentation. *molmap - Create a density map from atomic models*. [https://www.cgl.ucsf.edu/chimerax/docs/user/commands/molmap.html](https://www.cgl.ucsf.edu/chimerax/docs/user/commands/molmap.html)
-
-
-
+This mode produces maps where isosurfaces approximate the van der Waals envelope when contoured at low levels [Goddard2018].
 
 ### Situs Method
 
-The Situs method implemented here follows the real-space convolution approach established in the Situs package [1, 2]. It generates a density map by first projecting atomic structures onto a grid and then smoothing the result with a kernel function. This two-step process is designed to produce maps that correspond to a user-specified resolution.
+The Situs method implemented here follows the real-space convolution approach established in the Situs package [Wriggers2010, Wriggers1999]. It generates a density map by first projecting atomic structures onto a grid and then smoothing the result with a kernel function. This two-step process is designed to produce maps that correspond to a user-specified resolution.
 
 #### Kernel Functions
 
 The method offers five distinct kernel types, each with a different mathematical form. The choice of kernel affects the shape of the resulting density. The kernels are defined as functions of the distance $r$ from the kernel center. Two key parameters define the kernel's width:
 
-*   **Half-max radius** ($r_h$): The distance at which the kernel's value drops to half of its maximum.
-*   **Situs resolution** ($r_s$): An empirical resolution measure defined as $r_s = 2\sigma$, where $\sigma$ is the standard deviation of a 3D Gaussian kernel. The relationship between $r_s$ and the half-max radius is kernel-dependent.
+- **Half-max radius** ($r_h$): The distance at which the kernel's value drops to half of its maximum.
+- **Situs resolution** ($r_s$): An empirical resolution measure defined as $r_s = 2\sigma$, where $\sigma$ is the standard deviation of a 3D Gaussian kernel. The relationship between $r_s$ and the half-max radius is kernel-dependent.
 
 The user can specify the target resolution in two modes:
-1.  **Half-max radius mode** (positive input value): The input value is used directly as $r_h$.
-2.  **$2\sigma$ mode** (negative input value): The absolute input value is used as $r_s$, and $r_h$ is calculated accordingly.
+1. **Half-max radius mode** (positive input value): The input value is used directly as $r_h$.
+2. **$2\sigma$ mode** (negative input value): The absolute input value is used as $r_s$, and $r_h$ is calculated accordingly.
 
 The kernel functions are:
 
 | Kernel Type | Function $K(r)$ | Half-max relation |
-| :--- | :--- | :--- |
+|-------------|---------------|-------------------|
 | **Gaussian** | $\exp\left(-\dfrac{3r^2}{2\sigma^2}\right)$ | $r_h = \sigma\sqrt{\dfrac{\ln 2}{1.5}}$ |
 | **Triangular** | $\max\left(0, 1 - \dfrac{r}{2r_h}\right)$ | $r_h$ is the half-max radius |
 | **Semi-Epanechnikov** | $\max\left(0, 1 - \dfrac{r^{1.5}}{2r_h^{1.5}}\right)$ | $r_h$ is the half-max radius |
 | **Epanechnikov** | $\max\left(0, 1 - \dfrac{r^2}{2r_h^2}\right)$ | $r_h$ is the half-max radius |
 | **Hard Sphere** | $\max\left(0, 1 - \dfrac{r^{60}}{2r_h^{60}}\right)$ | $r_h$ is the half-max radius |
 
-The **Epanechnikov kernel** is a special case, as it is known to be optimal for minimizing the asymptotic mean integrated square error in kernel density estimation [3].
+The **Epanechnikov kernel** is a special case, as it is known to be optimal for minimizing the asymptotic mean integrated square error in kernel density estimation [Epanechnikov1969].
 
 #### Map Generation Workflow
 
-The map generation follows a two-step process, consistent with the description of the `pdb2vol` tool from the Situs documentation [4]:
+The map generation follows a two-step process, consistent with the description of the `pdb2vol` tool from the Situs documentation [SitusDoc]:
 
-1.  **Projection to Lattice**: Atoms are projected onto a cubic lattice using **trilinear interpolation**. Each atom, with a given position and weight (atomic mass or unity), contributes to the eight surrounding voxels. This creates an intermediate "lattice" representation of the structure.
+1. **Projection to Lattice**: Atoms are projected onto a cubic lattice using **trilinear interpolation**. Each atom, with a given position and weight (atomic mass or unity), contributes to the eight surrounding voxels. This creates an intermediate "lattice" representation of the structure.
 
-2.  **Kernel Convolution**: The lattice is then convolved with the selected 3D kernel. This step smooths the structure to the desired resolution and produces the final density map. The kernel's width is determined by the user-specified resolution and kernel type, as described above.
+2. **Kernel Convolution**: The lattice is then convolved with the selected 3D kernel. This step smooths the structure to the desired resolution and produces the final density map. The kernel's width is determined by the user-specified resolution and kernel type, as described above.
 
 #### Lattice Variance Correction
 
-The initial projection onto a lattice introduces an inherent, small amount of blurring. An optional correction can be applied that accounts for this lattice smoothing. This is achieved by adjusting the kernel's variance:
+The initial projection onto a lattice introduces an inherent, small amount of blurring. An optional correction can be applied that accounts for this lattice smoothing [Wriggers2012]. This is achieved by adjusting the kernel's variance:
 
 $$\sigma_{\text{corrected}}^2 = \sigma_{\text{target}}^2 - \sigma_{\text{lattice}}^2$$
 
-where $\sigma_{\text{target}}$ is the width required to achieve the desired resolution, and $\sigma_{\text{lattice}}$ is the standard deviation of the point-spread function introduced by the trilinear projection. This correction ensures that the final map more accurately matches the target resolution [1, 2, 5].
-
-#### References for Situs Method
-
-1. **Situs**: Wriggers, W. (2010). *Using Situs for the integration of multi-resolution structures*. Biophysical Reviews, 2(1), 21-27. [DOI: 10.1007/s12551-009-0024-5](https://doi.org/10.1007/s12551-009-0024-5)
-
-2. **Original Situs Paper**: Wriggers, W., Milligan, R.A., & McCammon, J.A. (1999). *Situs: A package for docking crystal structures into low-resolution maps from electron microscopy*. Journal of Structural Biology, 125(2-3), 185-195. [DOI: 10.1006/jsbi.1998.4080](https://doi.org/10.1006/jsbi.1998.4080)
-
-3. **Epanechnikov Kernel**: Epanechnikov, V.A. (1969). *Non-parametric estimation of a multivariate probability density*. Theory of Probability & Its Applications, 14(1), 153-158. [DOI: 10.1137/1114019](https://doi.org/10.1137/1114019)
-
-4. **pdb2vol Documentation**: Situs online documentation. *pdb2vol - Create a Volumetric Map from a PDB*. [https://situs.biomachina.org](https://situs.biomachina.org)
-
-5. **Conventions Paper**: Wriggers, W. (2012). *Conventions and workflows for using Situs*. Acta Crystallographica Section D, 68(4), 344-351. [DOI: 10.1107/S0907444911049791](https://doi.org/10.1107/S0907444911049791)
-
-
-
-
-
+where $\sigma_{\text{target}}$ is the width required to achieve the desired resolution, and $\sigma_{\text{lattice}}$ is the standard deviation of the point-spread function introduced by the trilinear projection. This correction ensures that the final map more accurately matches the target resolution [Wriggers2010, Wriggers1999].
 
 ### EMmer / GEMMI Method
 
-This method, inspired by the GEMMI library [5] and EMmer, uses the complete International Tables Vol. C coefficients (c4322.lib) with Refmac-compatible blur [6]:
+This method, inspired by the GEMMI library [Wojdyr2022] and EMmer, uses the complete International Tables Vol. C coefficients (c4322.lib) with Refmac-compatible blur [Murshudov1997]:
 
 The effective B-factor including resolution-dependent blur:
 
@@ -296,39 +231,9 @@ The atomic scattering factors are then:
 
 $$f_e(s) = \sum_{i=1}^{5} a_i \exp\left(-(b_i + B_{\text{eff}}) s^2\right)$$
 
-This produces maps compatible with Refmac sharpening/blurring conventions, making them suitable for refinement and validation in crystallographic and cryo-EM workflows. The coefficients used in this method are taken directly from the Peng1996 paper, providing a robust and accurate parameterization.
+This produces maps compatible with Refmac sharpening/blurring conventions [Murshudov1997, Murshudov2011], making them suitable for refinement and validation in crystallographic and cryo-EM workflows. The coefficients used in this method are taken directly from the International Tables Vol. C [InternationalTables2006] as compiled in the GEMMI library's c4322.lib [Wojdyr2022].
 
-
-
-
-
-
-
-
-
-
-
-## Building the Project
-
-### Dependencies
-
-- **Intel oneAPI Base Toolkit & Intel oneAPI HPC Toolkit**: Provides Intel IPP (Integrated Performance Primitives) and MKL (Math Kernel Library) for FFT operations and optimized vector functions.
-- **CMake** (version 3.12 or higher): For cross-platform build configuration.
-- **OpenMP**: For shared-memory parallelization (usually included with modern compilers).
-- **C++17 compliant compiler**: e.g., GCC 7+, Clang 5+, MSVC 2017+.
-
-
-
-
-
-
-
-
-## Input Parameters Reference
-
-This document describes all input parameters accepted by the `pdb2mrc` command-line tool, organized by functionality.
-
----
+## Input Parameters
 
 ### Required Parameters
 
@@ -337,15 +242,11 @@ This document describes all input parameters accepted by the `pdb2mrc` command-l
 | `-i FILE` | string | Input PDB file path |
 | `-o FILE` | string | Output MRC file path |
 
----
-
 ### Method Selection
 
 | Parameter | Format | Description |
 |-----------|--------|-------------|
 | `--method STR` | string | Generation method: `peng1996` (default), `chimerax`, `situs`, `emmer` |
-
----
 
 ### Common Parameters
 
@@ -360,8 +261,6 @@ This document describes all input parameters accepted by the `pdb2mrc` command-l
 | `-q` | flag | - | Quiet mode |
 | `-h` | flag | - | Show help message |
 
----
-
 ### PDB Filtering Parameters
 
 | Parameter | Format | Default | Description |
@@ -371,16 +270,12 @@ This document describes all input parameters accepted by the `pdb2mrc` command-l
 | `--filter-w` | flag | off | Filter out water molecules |
 | `-b FLOAT` | float | 0.0 | B-factor cutoff (exclude atoms with B > value, 0 = no cutoff) |
 
----
-
 ### Peng1996/AtomicNumber Parameters
 
 | Parameter | Format | Default | Description |
 |-----------|--------|---------|-------------|
 | `-a STR` | string | `peng1996` | Amplitude mode: `peng1996` or `atomic-number` |
 | `--no-bfac` | flag | - | Ignore B-factors from PDB file |
-
----
 
 ### ChimeraX-Specific Parameters
 
@@ -396,8 +291,6 @@ The ChimeraX method uses the following relationships:
 | Sigma | $\sigma = R/(\pi\sqrt{2})$ | Gaussian width |
 | Cutoff radius | $r_{\text{cut}} = n \cdot \sigma$ | Maximum distance for atom contributions |
 | Grid spacing | $s = R/3$ | Default voxel size |
-
----
 
 ### Situs-Specific Parameters
 
@@ -429,9 +322,7 @@ The ChimeraX method uses the following relationships:
 | Mode | Input | Interpretation |
 |------|-------|----------------|
 | Half-max radius | positive value | $r_h =$ input value |
-| $2\sigma$ mode | negative value | $r_s = \| \text{input} \|$, $\sigma = r_s/2$ |
-
----
+| $2\sigma$ mode | negative value | $r_s = \|\text{input}\|$, $\sigma = r_s/2$ |
 
 ### EMmer-Specific Parameters
 
@@ -451,47 +342,20 @@ The ChimeraX method uses the following relationships:
 
 When `--emmer-refmac-blur` is enabled and no manual blur is provided, the blur is calculated as:
 
-$$ B_{\text{eff}} = \frac{8\pi^2}{1.1} \left(\frac{d_{\min}}{2R}\right)^2 - B_{\min} $$
+$$B_{\text{eff}} = \frac{8\pi^2}{1.1} \left(\frac{d_{\min}}{2R}\right)^2 - B_{\min}$$
 
 where:
 - $d_{\min}$ is the target resolution
 - $R = 1.5$ is the Shannon rate
 - $B_{\min}$ is the minimum B-factor in the structure
 
----
-
-### Resolution Criteria Reference
-
-The following criteria convert target resolution $R$ to Gaussian sigma $\sigma$:
-
-| Criterion | Formula | Typical Use |
-|-----------|---------|-------------|
-| Rayleigh | $\sigma = R/1.665$ | Standard optics criterion |
-| ChimeraX | $\sigma = R/(\pi\sqrt{2})$ | UCSF ChimeraX molmap |
-| EMAN2 | $\sigma = R/(\pi\sqrt{8})$ | EMAN2 package |
-| FSC=0.143 | $\sigma = R/(1.1 \times 1.665)$ | High-resolution cryo-EM |
-| FSC=0.5 | $\sigma = R/(1.3 \times 1.665)$ | Conventional resolution |
-
----
-
-### Amplitude Modes Reference
-
-| Mode | Amplitude | Description |
-|------|-----------|-------------|
-| Peng1996 | $A = \sum_{i=1}^5 a_i$ | Sum of Gaussian coefficients ($f_e(0)$) |
-| Atomic Number | $A = Z$ | Direct atomic number scaling |
-| ChimeraX | $A = Z$ | Same as atomic number, with ChimeraX normalization |
-| EMmer | $A = \sum_{i=1}^5 a_i \exp(-(b_i + B_{\text{eff}})s^2)$ | International Tables with blur |
-
----
-
-### Example Parameter Combinations
+## Examples
 
 Default Peng1996 mode:
 
-<tt>pdb2mrc -i 1ake.pdb -o 1ake.mrc -r 8.0 -c rayleigh -a peng1996</tt>
+<tt>pdb2mrc -i 1ake.pdb -o 1ake.mrc -r 8.0</tt>
 
-ChimeraX with custom cutoff:
+ChimeraX mode with custom cutoff:
 
 <tt>pdb2mrc -i 1ake.pdb -o 1ake_chx.mrc -r 8.0 --method chimerax --cutoff 3.0</tt>
 
@@ -507,32 +371,70 @@ Full filtering options:
 
 <tt>pdb2mrc -i 1ake.pdb -o 1ake_filtered.mrc -r 6.0 --filter-h --filter-w -b 50.0</tt>
 
+## Building the Project
 
+### Dependencies
+
+- **Intel oneAPI Base Toolkit & Intel oneAPI HPC Toolkit**: Provides Intel IPP (Integrated Performance Primitives) and MKL (Math Kernel Library) for FFT operations and optimized vector functions.
+- **CMake** (version 3.12 or higher): For cross-platform build configuration.
+- **OpenMP**: For shared-memory parallelization (usually included with modern compilers).
+- **C++17 compliant compiler**: e.g., GCC 7+, Clang 5+, MSVC 2017+.
+
+### Build Instructions
+
+<tt>mkdir build</tt>
+<tt>cd build</tt>
+<tt>cmake ..</tt>
+<tt>make</tt>
+
+I'll update the References section with DOIs and links:
 
 ## References
 
-1. **International Tables for Crystallography Vol. C** (2006). Prince, E., ed. *International Tables for Crystallography*, Vol. C, 3rd ed. Springer.
-   [DOI: 10.1107/97809553602060000103](https://doi.org/10.1107/97809553602060000103)
+[ChimeraXSource] UCSF ChimeraX. (2023). *Gaussian summation implementation*. GitHub repository. https://github.com/ucsf-chimerax/chimerax
 
-2. **Peng1996**: Peng, L.-M., Ren, G., Dudarev, S.L., & Whelan, M.J. (1996). *Robust Parameterization of Elastic and Absorptive Electron Atomic Scattering Factors*. Acta Crystallographica Section A, 52(2), 257-276.
-   [DOI: 10.1107/S0108767395014371](https://doi.org/10.1107/S0108767395014371)
+[Epanechnikov1969] Epanechnikov, V. A. (1969). Non-parametric estimation of a multivariate probability density. *Theory of Probability & Its Applications*, 14(1), 153-158. https://doi.org/10.1137/1114019
 
-3. **ChimeraX**: Goddard, T.D., Huang, C.C., Meng, E.C., Pettersen, E.F., Couch, G.S., Morris, J.H., & Ferrin, T.E. (2018). *UCSF ChimeraX: Meeting modern challenges in visualization and analysis*. Protein Science, 27(1), 14-25.
-   [DOI: 10.1002/pro.3235](https://doi.org/10.1002/pro.3235)
+[Goddard2018] Goddard, T. D., Huang, C. C., Meng, E. C., Pettersen, E. F., Couch, G. S., Morris, J. H., & Ferrin, T. E. (2018). UCSF ChimeraX: Meeting modern challenges in visualization and analysis. *Protein Science*, 27(1), 14-25. https://doi.org/10.1002/pro.3235
 
-4. **Situs**: Wriggers, W. (2010). *Using Situs for the integration of multi-resolution structures*. Biophysical Reviews, 2(1), 21-27.
-   [DOI: 10.1007/s12551-009-0024-5](https://doi.org/10.1007/s12551-009-0024-5)
+[InternationalTables2006] Prince, E. (Ed.). (2006). *International Tables for Crystallography, Vol. C: Mathematical, physical and chemical tables* (3rd ed.). Springer. https://doi.org/10.1107/97809553602060000103
 
-5. **GEMMI**: Wojdyr, M. (2022). *GEMMI: A library for structural biology*. Journal of Open Source Software, 7(73), 4200.
-   [DOI: 10.21105/joss.04200](https://doi.org/10.21105/joss.04200)
+[Murshudov1997] Murshudov, G. N., Vagin, A. A., & Dodson, E. J. (1997). Refinement of macromolecular structures by the maximum-likelihood method. *Acta Crystallographica Section D*, 53(3), 240-255. https://doi.org/10.1107/S0907444996012255
 
-6. **Refmac**: Murshudov, G.N., Vagin, A.A., & Dodson, E.J. (1997). *Refinement of macromolecular structures by the maximum-likelihood method*. Acta Crystallographica Section D, 53(3), 240-255.
-   [DOI: 10.1107/S0907444996012255](https://doi.org/10.1107/S0907444996012255)
+[Murshudov2011] Murshudov, G. N., Skubák, P., Lebedev, A. A., Pannu, N. S., Steiner, R. A., Nicholls, R. A., Winn, M. D., Long, F., & Vagin, A. A. (2011). REFMAC5 for the refinement of macromolecular crystal structures. *Acta Crystallographica Section D*, 67(4), 355-367. https://doi.org/10.1107/S0907444911001314
 
-7. **Resolution Criteria**: Rosenthal, P.B., & Henderson, R. (2003). *Optimal determination of particle orientation, absolute hand, and contrast loss in single-particle electron cryomicroscopy*. Journal of Molecular Biology, 333(4), 721-745.
-   [DOI: 10.1016/j.jmb.2003.07.013](https://doi.org/10.1016/j.jmb.2003.07.013)
+[Peng1996] Peng, L. M., Ren, G., Dudarev, S. L., & Whelan, M. J. (1996). Robust parameterization of elastic and absorptive electron atomic scattering factors. *Acta Crystallographica Section A*, 52(2), 257-276. https://doi.org/10.1107/S0108767395014371
 
-8. **EMAN2**: Tang, G., Peng, L., Baldwin, P.R., Mann, D.S., Jiang, W., Rees, I., & Ludtke, S.J. (2007). *EMAN2: An extensible image processing suite for electron microscopy*. Journal of Structural Biology, 157(1), 38-46.
-   [DOI: 10.1016/j.jsb.2006.05.009](https://doi.org/10.1016/j.jsb.2006.05.009)
+[Pettersen2020] Pettersen, E. F., Goddard, T. D., Huang, C. C., Meng, E. C., Couch, G. S., Croll, T. I., Morris, J. H., & Ferrin, T. E. (2020). UCSF ChimeraX: Structure visualization for researchers, educators, and developers. *Protein Science*, 30(1), 70-82. https://doi.org/10.1002/pro.3943
 
+[Rayleigh1879] Rayleigh, L. (1879). Investigations in optics, with special reference to the spectroscope. *Philosophical Magazine*, 8(49), 261-274. https://doi.org/10.1080/14786447908639684
 
+[Rosenthal2003] Rosenthal, P. B., & Henderson, R. (2003). Optimal determination of particle orientation, absolute hand, and contrast loss in single-particle electron cryomicroscopy. *Journal of Molecular Biology*, 333(4), 721-745. https://doi.org/10.1016/j.jmb.2003.07.013
+
+[SitusDoc] Situs. (2023). *pdb2vol - Create a volumetric map from a PDB*. Online documentation. https://situs.biomachina.org
+
+[Tang2007] Tang, G., Peng, L., Baldwin, P. R., Mann, D. S., Jiang, W., Rees, I., & Ludtke, S. J. (2007). EMAN2: An extensible image processing suite for electron microscopy. *Journal of Structural Biology*, 157(1), 38-46. https://doi.org/10.1016/j.jsb.2006.05.009
+
+[Wojdyr2022] Wojdyr, M. (2022). GEMMI: A library for structural biology. *Journal of Open Source Software*, 7(73), 4200. https://doi.org/10.21105/joss.04200
+
+[Wriggers1999] Wriggers, W., Milligan, R. A., & McCammon, J. A. (1999). Situs: A package for docking crystal structures into low-resolution maps from electron microscopy. *Journal of Structural Biology*, 125(2-3), 185-195. https://doi.org/10.1006/jsbi.1998.4080
+
+[Wriggers2010] Wriggers, W. (2010). Using Situs for the integration of multi-resolution structures. *Biophysical Reviews*, 2(1), 21-27. https://doi.org/10.1007/s12551-009-0024-5
+
+[Wriggers2012] Wriggers, W. (2012). Conventions and workflows for using Situs. *Acta Crystallographica Section D*, 68(4), 344-351. https://doi.org/10.1107/S0907444911049791
+
+[Cheng2015] Cheng, A., Henderson, R., Mastronarde, D., Ludtke, S. J., Schoenmakers, R. H., Short, J., ... & Agard, D. A. (2015). MRC2014: Extensions to the MRC format header for electron cryo-microscopy and tomography. *Journal of Structural Biology*, 192(2), 146-150. https://doi.org/10.1016/j.jsb.2015.04.002
+
+## Citation
+
+If you use pdb2mrc in your research, please cite:
+
+[Your citation information here]
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+We thank the developers of UCSF ChimeraX, Situs, GEMMI, and other structural biology software for their foundational work that inspired this implementation.
