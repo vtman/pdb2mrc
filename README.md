@@ -26,30 +26,18 @@ A high-performance C++ library and command-line tool for generating cryo-EM dens
 
 - **Multiple Real-Space Map Generation Methods**:
   - **EMmer/GEMMI**: Method based on the complete International Tables Vol. C coefficients (c4322.lib) with Refmac-compatible blur, inspired by the GEMMI library [Wojdyr2022]
-  - **Peng1996**: The classic 5-Gaussian parameterization of electron scattering factors from International Tables for Crystallography [Peng1996]
+  - **Peng1996**: The classic 5-Gaussian parameterization of electron scattering factors from International Tables for Crystallography [Peng1996] with optional per-element averaged B-factor weighting
   - **ChimeraX**: UCSF ChimeraX `molmap` algorithm, which applies a single Gaussian blur to atomic coordinates [Goddard2018, Pettersen2020]
   - **Situs**: Density projection method with multiple kernel choices (Gaussian, triangular, Epanechnikov) and configurable resolution definitions [Wriggers2010, Wriggers1999]
 
-- **Resolution Criteria** (all real-space definitions):
-  - Rayleigh criterion: $\sigma = R/1.665$ [Rayleigh1879]
-  - ChimeraX: $\sigma = R/(\pi\sqrt{2})$ [Goddard2018]
-  - EMAN2: $\sigma = R/(\pi\sqrt{8})$ [Tang2007]
+- **B-factor Analysis**:
+  - Automatic calculation of per-element and global B-factor statistics
+  - Conversion of mean B-factor to equivalent resolution for all criteria (Rayleigh, ChimeraX, EMAN2)
+  - Clear indication of B-factor usage per method
 
-- **Amplitude Scaling Modes**:
-  - Peng1996 $f_e(0)$ values (sum of Gaussian coefficients) [Peng1996]
-  - Atomic number ($Z$) - EMAN2 style for mass-weighted maps [Tang2007]
-
-- **Performance Optimizations**:
-  - OpenMP parallelization
-  - Intel MKL FFT for convolution-based methods
-  - Memory-efficient per-element processing
-  - 64-bit support for large grids ($>2^{31}$ voxels)
-
-- **Input/Output**:
-  - PDB format input with filtering options (H removal, B-factor cutoff)
-  - MRC/CCP4 format output (32-bit float) [Cheng2015]
-  - Proper header with origin and voxel size
-  - Machine-independent byte ordering
+- **Automatic Filtering**:
+  - Water molecules (HOH, WAT, H2O, TIP) are ALWAYS filtered out
+  - Optional hydrogen filtering (default: on)
 
 ## Theory
 
@@ -76,9 +64,19 @@ Different software packages use slightly different criteria, all of which are im
 
 ***
 
-### Default Method
+### Default Method (Peng1996)
 
 The default map generation method in pdb2mrc treats density generation as a sequence of convolutions, each handling a different physical effect. This modular approach ensures both accuracy and computational efficiency.
+
+#### B-factor Handling
+
+When B-factors are enabled with `--use-bfac`, the method uses **per-element averaged B-factors** rather than per-atom values. For each element type (e.g., all carbon atoms), the mean B-factor is calculated and applied uniformly to all atoms of that element:
+
+$$\sigma_{B,\text{element}}^2 = \frac{\langle B \rangle_{\text{element}}}{8\pi^2}$$
+
+This approach provides a good balance between accuracy and computational efficiency, as it allows precomputation of kernels per element type while still capturing the overall thermal motion of different atomic species.
+
+If B-factors are not enabled (default), a uniform default value of 20.0 Å² is used for all atoms.
 
 #### The Convolution Chain
 
@@ -429,8 +427,7 @@ This produces maps compatible with Refmac sharpening/blurring conventions [Mursh
 |-----------|--------|---------|-------------|
 | `--filter-h` | flag | on | Filter out hydrogen atoms |
 | `--no-filter-h` | flag | - | Keep hydrogen atoms |
-| `--filter-w` | flag | off | Filter out water molecules |
-| `-b FLOAT` | float | 0.0 | B-factor cutoff (exclude atoms with B > value, 0 = no cutoff) |
+| `-b` | float | 0.0 | B-factor cutoff (exclude atoms with B > value, 0 = no cutoff) |
 
 ### Peng1996/AtomicNumber Parameters
 
@@ -438,6 +435,7 @@ This produces maps compatible with Refmac sharpening/blurring conventions [Mursh
 |-----------|--------|---------|-------------|
 | `-a` | string | `peng1996` | Amplitude mode: `peng1996` or `atomic-number` |
 | `--no-bfac` | flag | - | Ignore B-factors from PDB file |
+| `--b-default` | float | 20.0 | Default B-factor when not using PDB values |
 
 ### ChimeraX-Specific Parameters
 
@@ -513,9 +511,15 @@ where:
 
 ## Examples
 
-Default Peng1996 mode:
+
+
+Default Peng1996 mode (B-factors ignored, using default 20.0 Å²):
 
 <tt>pdb2mrc -i 1ake.pdb -o 1ake.mrc -r 8.0</tt>
+
+Peng1996 with per-element averaged B-factors:
+
+<tt>pdb2mrc -i 1ake.pdb -o 1ake_bfac.mrc -r 8.0 --use-bfac</tt>
 
 ChimeraX mode with custom cutoff:
 
@@ -529,9 +533,10 @@ EMmer with manual blur:
 
 <tt>pdb2mrc -i 1ake.pdb -o 1ake_emmer.mrc --method emmer -r 8.0 --emmer-blur 25.0 --emmer-no-align</tt>
 
-Full filtering options:
+Full filtering options (water always filtered):
 
-<tt>pdb2mrc -i 1ake.pdb -o 1ake_filtered.mrc -r 6.0 --filter-h --filter-w -b 50.0</tt>
+<tt>pdb2mrc -i 1ake.pdb -o 1ake_filtered.mrc -r 6.0 --filter-h -b 50.0</tt>
+
 
 ## Building the Project
 
