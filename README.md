@@ -415,7 +415,7 @@ This produces maps compatible with Refmac sharpening/blurring conventions [Mursh
 | Parameter | Format | Default | Description |
 |-----------|--------|---------|-------------|
 | `-r` | float | 6.0 | Target resolution in Ångströms |
-| `-c` | string | `rayleigh` | Resolution criterion: `rayleigh`, `chimerax`, `eman2`, `fsc0143`, `fsc05` |
+| `-c` | string | `rayleigh` | Resolution criterion: `rayleigh`, `chimerax`, `eman2` |
 | `-s` | float | auto | Voxel size in Å (default = resolution/3) |
 | `-p` | float | 3.0 | Padding around atoms in Å |
 | `-t` | int | 0 | Number of OpenMP threads (0 = auto) |
