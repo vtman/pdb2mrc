@@ -1,8 +1,13 @@
 # pdb2mrc - Convert PDB to cryo-EM Density Maps
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue)](https://github.com/yourusername/pdb2mrc)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
+
 A high-performance C++ library and command-line tool for generating cryo-EM density maps from atomic models (PDB files) at specified resolutions. The program implements multiple map generation algorithms commonly used in structural biology, including Peng1996 (International Tables), ChimeraX molmap, Situs, and EMmer methods.
 
 ## Table of Contents
+- [Features](#features)
 - [Theory](#theory)
   - [Resolution Definition](#resolution-definition)
   - [Peng1996 / International Tables Method](#peng1996--international-tables-method)
@@ -10,11 +15,50 @@ A high-performance C++ library and command-line tool for generating cryo-EM dens
   - [Situs Method](#situs-method)
   - [EMmer / GEMMI Method](#emmer--gemmi-method)
 - [Installation](#installation)
+  - [Prerequisites](#prerequisites)
+  - [Building from Source](#building-from-source)
+  - [Windows Build](#windows-build)
 - [Command Line Usage](#command-line-usage)
+  - [Basic Options](#basic-options)
+  - [Method-Specific Options](#method-specific-options)
 - [Examples](#examples)
 - [Performance](#performance)
+- [API Documentation](#api-documentation)
 - [References](#references)
 - [Citation](#citation)
+- [License](#license)
+- [Contributing](#contributing)
+- [Acknowledgments](#acknowledgments)
+
+## Features
+
+- **Multiple Map Generation Methods**:
+  - **Peng1996**: Classic 5-Gaussian scattering factors from International Tables
+  - **ChimeraX**: UCSF ChimeraX `molmap` algorithm with Gaussian blur
+  - **Situs**: Multi-kernel density projection (Gaussian, triangular, Epanechnikov)
+  - **EMmer**: International Tables Vol. C coefficients with Refmac blur
+
+- **Resolution Criteria**:
+  - Rayleigh criterion: $\sigma = R/1.665$
+  - ChimeraX: $\sigma = R/(\pi\sqrt{2})$
+  - EMAN2: $\sigma = R/(\pi\sqrt{8})$
+  - FSC-based: $R_{FSC=0.143}$ and $R_{FSC=0.5}$
+
+- **Amplitude Scaling Modes**:
+  - Peng1996 $f_e(0)$ values (sum of Gaussian coefficients)
+  - Atomic number ($Z$) - EMAN2 style for mass-weighted maps
+
+- **Performance Optimizations**:
+  - OpenMP parallelization
+  - Intel MKL FFT for convolution
+  - Memory-efficient per-element processing
+  - 64-bit support for large grids ($>2^{31}$ voxels)
+
+- **Input/Output**:
+  - PDB format input with filtering options (H removal, B-factor cutoff)
+  - MRC/CCP4 format output (32-bit float)
+  - Proper header with origin and voxel size
+  - Machine-independent byte ordering
 
 ## Theory
 
@@ -22,77 +66,101 @@ A high-performance C++ library and command-line tool for generating cryo-EM dens
 
 In pdb2mrc, we define resolution based on the **two-atom criterion**: two atoms placed at a distance equal to the target resolution, after applying the blurring function, should produce a density map where the two peaks are just barely distinguishable as separate blobs. This follows the Rayleigh criterion in optics:
 
-<img src="https://latex.codecogs.com/svg.latex?R_{\text{Rayleigh}}&space;=&space;\frac{0.61\lambda}{NA}" title="R_{\text{Rayleigh}} = \frac{0.61\lambda}{NA}" />
+$$
+R_{\text{Rayleigh}} = \frac{0.61\lambda}{\text{NA}}
+$$
 
 For Gaussian blurring, this translates to:
 
-<img src="https://latex.codecogs.com/svg.latex?\sigma&space;=&space;\frac{R}{1.665}" title="\sigma = \frac{R}{1.665}" />
+$$
+\sigma = \frac{R}{1.665}
+$$
 
-where <i>R</i> is the target resolution and <i>&sigma;</i> is the standard deviation of the Gaussian kernel.
+where $R$ is the target resolution and $\sigma$ is the standard deviation of the Gaussian kernel.
 
 Different software packages use slightly different criteria:
 
 | Criterion | Formula | Reference |
 |-----------|---------|-----------|
-| Rayleigh | <img src="https://latex.codecogs.com/svg.latex?\sigma&space;=&space;R/1.665"> | Standard optics |
-| ChimeraX | <img src="https://latex.codecogs.com/svg.latex?\sigma&space;=&space;R/(\pi\sqrt{2})"> | Goddard et al. (2018) |
-| EMAN2 | <img src="https://latex.codecogs.com/svg.latex?\sigma&space;=&space;R/(\pi\sqrt{8})"> | Tang et al. (2007) |
-| FSC=0.143 | <img src="https://latex.codecogs.com/svg.latex?\sigma&space;=&space;R/(1.1\times1.665)"> | Rosenthal & Henderson (2003) |
-| FSC=0.5 | <img src="https://latex.codecogs.com/svg.latex?\sigma&space;=&space;R/(1.3\times1.665)"> | Conventional |
+| Rayleigh | $\sigma = R/1.665$ | Standard optics |
+| ChimeraX | $\sigma = R/(\pi\sqrt{2})$ | Goddard et al. (2018) |
+| EMAN2 | $\sigma = R/(\pi\sqrt{8})$ | Tang et al. (2007) |
+| FSC=0.143 | $\sigma = R/(1.1 \times 1.665)$ | Rosenthal & Henderson (2003) |
+| FSC=0.5 | $\sigma = R/(1.3 \times 1.665)$ | Conventional |
 
 ### Peng1996 / International Tables Method
 
 This method uses the 5-Gaussian parameterization of electron scattering factors from the **International Tables for Crystallography** [1,2]. The scattering factor for an element as a function of resolution is:
 
-<img src="https://latex.codecogs.com/svg.latex?f_e(s)&space;=&space;\sum_{i=1}^{5}&space;a_i&space;\exp(-b_i&space;s^2)" title="f_e(s) = \sum_{i=1}^{5} a_i \exp(-b_i s^2)" />
+$$
+f_e(s) = \sum_{i=1}^{5} a_i \exp(-b_i s^2)
+$$
 
-where <img src="https://latex.codecogs.com/svg.latex?s&space;=&space;\sin\theta/\lambda" title="s = \sin\theta/\lambda" /> is the scattering vector. The real-space density is obtained by inverse Fourier transform:
+where $s = \sin\theta/\lambda$ is the scattering vector. The real-space density is obtained by inverse Fourier transform:
 
-<img src="https://latex.codecogs.com/svg.latex?\rho(r)&space;=&space;\mathcal{F}^{-1}[f_e(s)]&space;=&space;\sum_{i=1}^{5}&space;\frac{a_i}{(2\pi\sigma_i^2)^{3/2}}&space;\exp\left(-\frac{r^2}{2\sigma_i^2}\right)" title="\rho(r) = \mathcal{F}^{-1}[f_e(s)] = \sum_{i=1}^{5} \frac{a_i}{(2\pi\sigma_i^2)^{3/2}} \exp\left(-\frac{r^2}{2\sigma_i^2}\right)" />
+$$
+\rho(r) = \mathcal{F}^{-1}[f_e(s)] = \sum_{i=1}^{5} \frac{a_i}{(2\pi\sigma_i^2)^{3/2}} \exp\left(-\frac{r^2}{2\sigma_i^2}\right)
+$$
 
 The total width includes both the intrinsic atomic scattering and the resolution broadening:
 
-<img src="https://latex.codecogs.com/svg.latex?\sigma_i^2&space;=&space;\frac{b_i}{4\pi^2}&space;+&space;\sigma_{\text{res}}^2" title="\sigma_i^2 = \frac{b_i}{4\pi^2} + \sigma_{\text{res}}^2" />
+$$
+\sigma_i^2 = \frac{b_i}{4\pi^2} + \sigma_{\text{res}}^2
+$$
 
-where <img src="https://latex.codecogs.com/svg.latex?\sigma_{\text{res}}" title="\sigma_{\text{res}}" /> is determined by the target resolution using the chosen criterion.
+where $\sigma_{\text{res}}$ is determined by the target resolution using the chosen criterion.
 
 **Amplitude Modes**:
-- **Peng1996**: Uses the sum of coefficients <img src="https://latex.codecogs.com/svg.latex?\sum&space;a_i" title="\sum a_i" /> as the atomic scattering power at zero angle
-- **Atomic Number**: Scales by Z (EMAN2-style), useful for mass-weighted maps
+- **Peng1996**: Uses the sum of coefficients $\sum a_i$ as the atomic scattering power at zero angle
+- **Atomic Number**: Scales by $Z$ (EMAN2-style), useful for mass-weighted maps where density is proportional to atomic mass
 
 ### ChimeraX molmap Method
 
 UCSF ChimeraX implements a simplified approach using a single Gaussian per atom [3]:
 
-<img src="https://latex.codecogs.com/svg.latex?\rho(r)&space;=&space;\frac{Z}{(2\pi\sigma^2)^{3/2}}&space;\exp\left(-\frac{r^2}{2\sigma^2}\right)" title="\rho(r) = \frac{Z}{(2\pi\sigma^2)^{3/2}} \exp\left(-\frac{r^2}{2\sigma^2}\right)" />
+$$
+\rho(r) = \frac{Z}{(2\pi\sigma^2)^{3/2}} \exp\left(-\frac{r^2}{2\sigma^2}\right)
+$$
 
 with the resolution-dependent width:
 
-<img src="https://latex.codecogs.com/svg.latex?\sigma&space;=&space;\frac{R}{\pi\sqrt{2}}" title="\sigma = \frac{R}{\pi\sqrt{2}}" />
+$$
+\sigma = \frac{R}{\pi\sqrt{2}}
+$$
 
-The algorithm uses a cutoff at <i>n&sigma;</i> (default 5.0) for efficiency:
+The algorithm uses a cutoff at $n\sigma$ (default 5.0) for efficiency:
 
-<img src="https://latex.codecogs.com/svg.latex?\rho(r)&space;=&space;0&space;\quad\text{for}\quad&space;r&space;>&space;n\sigma" title="\rho(r) = 0 \quad\text{for}\quad r > n\sigma" />
+$$
+\rho(r) = 0 \quad\text{for}\quad r > n\sigma
+$$
+
+This method is computationally efficient and produces maps that closely match those from the ChimeraX `molmap` command.
 
 ### Situs Method
 
 The Situs package [4] offers multiple kernel types with flexible resolution definitions. The user can specify resolution either as:
-- **Half-max radius** <i>r<sub>h</sub></i> (positive value)
-- **2&sigma;** (negative value)
+- **Half-max radius** $r_h$ (positive value)
+- **$2\sigma$** (negative value)
 
 The kernel functions are:
 
-| Kernel Type | Function <i>K(r)</i> | Half-max relation |
+| Kernel Type | Function $K(r)$ | Half-max relation |
 |-------------|----------------------|-------------------|
-| Gaussian | <img src="https://latex.codecogs.com/svg.latex?\exp(-1.5&space;r^2/\sigma^2)" title="\exp(-1.5 r^2/\sigma^2)" /> | <img src="https://latex.codecogs.com/svg.latex?r_h&space;=&space;\sigma\sqrt{\ln&space;2&space;/&space;1.5}" title="r_h = \sigma\sqrt{\ln 2 / 1.5}" /> |
-| Triangular | <img src="https://latex.codecogs.com/svg.latex?1&space;-&space;r/(2r_h)" title="1 - r/(2r_h)" /> | <i>r<sub>h</sub></i> = half-max radius |
-| Semi-Epanechnikov | <img src="https://latex.codecogs.com/svg.latex?1&space;-&space;(r/r_h)^{1.5}" title="1 - (r/r_h)^{1.5}" /> | <i>r<sub>h</sub></i> = half-max radius |
-| Epanechnikov | <img src="https://latex.codecogs.com/svg.latex?1&space;-&space;(r/r_h)^2" title="1 - (r/r_h)^2" /> | <i>r<sub>h</sub></i> = half-max radius |
-| Hard Sphere | <img src="https://latex.codecogs.com/svg.latex?1&space;-&space;(r/r_h)^{60}" title="1 - (r/r_h)^{60}" /> | <i>r<sub>h</sub></i> = half-max radius |
+| Gaussian | $\exp(-1.5 r^2/\sigma^2)$ | $r_h = \sigma\sqrt{\ln 2 / 1.5}$ |
+| Triangular | $1 - r/(2r_h)$ | $r_h$ = half-max radius |
+| Semi-Epanechnikov | $1 - (r/r_h)^{1.5}$ | $r_h$ = half-max radius |
+| Epanechnikov | $1 - (r/r_h)^2$ | $r_h$ = half-max radius |
+| Hard Sphere | $1 - (r/r_h)^{60}$ | $r_h$ = half-max radius |
 
 The map generation follows a two-step process:
-1. **Projection**: Atoms are projected onto a lattice using trilinear interpolation
-2. **Convolution**: The lattice is convolved with the chosen kernel
+1. **Projection**: Atoms are projected onto a lattice using trilinear interpolation, with each atom contributing to the 8 surrounding voxels
+2. **Convolution**: The lattice is convolved with the chosen kernel to produce the final density map
+
+The lattice variance correction accounts for the smoothing introduced by the initial projection:
+
+$$
+\sigma_{\text{corrected}}^2 = \sigma_{\text{target}}^2 - \sigma_{\text{lattice}}^2
+$$
 
 ### EMmer / GEMMI Method
 
@@ -100,18 +168,22 @@ This method, inspired by the GEMMI library [5] and EMmer, uses the complete Inte
 
 The effective B-factor including resolution-dependent blur:
 
-<img src="https://latex.codecogs.com/svg.latex?B_{\text{eff}}&space;=&space;\frac{8\pi^2}{1.1}&space;\left(\frac{d_{\min}}{2R}\right)^2&space;-&space;B_{\min}" title="B_{\text{eff}} = \frac{8\pi^2}{1.1} \left(\frac{d_{\min}}{2R}\right)^2 - B_{\min}" />
+$$
+B_{\text{eff}} = \frac{8\pi^2}{1.1} \left(\frac{d_{\min}}{2R}\right)^2 - B_{\min}
+$$
 
 where:
-- <i>d<sub>min</sub></i> is the high-resolution limit
-- <i>R</i> = 1.5 is the Shannon rate (default)
-- <i>B<sub>min</sub></i> is the minimum B-factor in the structure
+- $d_{\min}$ is the high-resolution limit (target resolution)
+- $R = 1.5$ is the Shannon rate (default, can be changed with `--emmer-rate`)
+- $B_{\min}$ is the minimum B-factor in the structure
 
 The atomic scattering factors are then:
 
-<img src="https://latex.codecogs.com/svg.latex?f_e(s)&space;=&space;\sum_{i=1}^{5}&space;a_i&space;\exp\left(-(b_i&space;+&space;B_{\text{eff}})&space;s^2\right)" title="f_e(s) = \sum_{i=1}^{5} a_i \exp\left(-(b_i + B_{\text{eff}}) s^2\right)" />
+$$
+f_e(s) = \sum_{i=1}^{5} a_i \exp\left(-(b_i + B_{\text{eff}}) s^2\right)
+$$
 
-This produces maps compatible with Refmac sharpening/blurring conventions.
+This produces maps compatible with Refmac sharpening/blurring conventions, making them suitable for refinement and validation in crystallographic and cryo-EM workflows.
 
 ## Installation
 
@@ -121,13 +193,23 @@ This produces maps compatible with Refmac sharpening/blurring conventions.
 - **Intel MKL** (2020 or later) - for FFT operations
 - **Intel IPP** (optional, for optimized memory operations)
 - **CMake** 3.12+ (for build system)
-- **OpenMP** (for parallel processing)
+- **OpenMP** (for parallel processing, typically included with compiler)
 
 ### Building from Source
 
 ```bash
+# Clone the repository
 git clone https://github.com/yourusername/pdb2mrc.git
 cd pdb2mrc
+
+# Create build directory
 mkdir build && cd build
+
+# Configure with CMake
 cmake .. -DCMAKE_BUILD_TYPE=Release
+
+# Build
 make -j4
+
+# Install (optional)
+make install
