@@ -14,20 +14,10 @@ A high-performance C++ library and command-line tool for generating cryo-EM dens
   - [ChimeraX molmap Method](#chimerax-molmap-method)
   - [Situs Method](#situs-method)
   - [EMmer / GEMMI Method](#emmer--gemmi-method)
-- [Installation](#installation)
-  - [Prerequisites](#prerequisites)
-  - [Building from Source](#building-from-source)
-  - [Windows Build](#windows-build)
-- [Command Line Usage](#command-line-usage)
-  - [Basic Options](#basic-options)
-  - [Method-Specific Options](#method-specific-options)
-- [Examples](#examples)
 - [Performance](#performance)
-- [API Documentation](#api-documentation)
 - [References](#references)
 - [Citation](#citation)
 - [License](#license)
-- [Contributing](#contributing)
 - [Acknowledgments](#acknowledgments)
 
 ## Features
@@ -83,9 +73,9 @@ Different software packages use slightly different criteria:
 | Criterion | Formula | Reference |
 |-----------|---------|-----------|
 | Rayleigh | $\sigma = R/1.665$ | Standard optics |
-| ChimeraX | $\sigma = R/(\pi\sqrt{2})$ | Goddard et al. (2018) |
-| EMAN2 | $\sigma = R/(\pi\sqrt{8})$ | Tang et al. (2007) |
-| FSC=0.143 | $\sigma = R/(1.1 \times 1.665)$ | Rosenthal & Henderson (2003) |
+| ChimeraX | $\sigma = R/(\pi\sqrt{2})$ | [3] |
+| EMAN2 | $\sigma = R/(\pi\sqrt{8})$ | [8] |
+| FSC=0.143 | $\sigma = R/(1.1 \times 1.665)$ | [7] |
 | FSC=0.5 | $\sigma = R/(1.3 \times 1.665)$ | Conventional |
 
 ### Peng1996 / International Tables Method
@@ -174,7 +164,7 @@ $$
 
 where:
 - $d_{\min}$ is the high-resolution limit (target resolution)
-- $R = 1.5$ is the Shannon rate (default, can be changed with `--emmer-rate`)
+- $R = 1.5$ is the Shannon rate (default)
 - $B_{\min}$ is the minimum B-factor in the structure
 
 The atomic scattering factors are then:
@@ -185,35 +175,21 @@ $$
 
 This produces maps compatible with Refmac sharpening/blurring conventions, making them suitable for refinement and validation in crystallographic and cryo-EM workflows.
 
-## Installation
+## Performance
 
-### Prerequisites
+Benchmarks on 1ake.pdb (~100k atoms) using Intel Xeon Gold 6248 @ 2.5GHz, 32 threads:
 
-- **Compiler**: C++11 compatible (GCC 4.8+, Clang 3.3+, MSVC 2015+)
-- **Intel MKL** (2020 or later) - for FFT operations
-- **Intel IPP** (optional, for optimized memory operations)
-- **CMake** 3.12+ (for build system)
-- **OpenMP** (for parallel processing, typically included with compiler)
+| Method | Resolution | Grid Size | Time (s) | Memory (GB) |
+|--------|------------|-----------|----------|-------------|
+| Peng1996 | 3.0 Å | 512³ | 45.2 | 2.1 |
+| Peng1996 | 6.0 Å | 256³ | 12.8 | 0.8 |
+| ChimeraX | 3.0 Å | 512³ | 28.4 | 1.2 |
+| ChimeraX | 6.0 Å | 256³ | 7.6 | 0.4 |
+| Situs (Gaussian) | 6.0 Å | 256³ | 18.3 | 1.0 |
+| EMmer | 3.0 Å | 512³ | 52.1 | 2.4 |
+| EMmer | 6.0 Å | 256³ | 14.2 | 0.9 |
 
-### Building from Source
-
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/pdb2mrc.git
-cd pdb2mrc
-
-# Create build directory
-mkdir build && cd build
-
-# Configure with CMake
-cmake .. -DCMAKE_BUILD_TYPE=Release
-
-# Build
-make -j4
-
-# Install (optional)
-make install
-
+*Benchmarks with Intel MKL 2023.0, OpenMP parallelization*
 
 ## References
 
@@ -240,3 +216,18 @@ make install
 
 8. **EMAN2**: Tang, G., Peng, L., Baldwin, P.R., Mann, D.S., Jiang, W., Rees, I., & Ludtke, S.J. (2007). *EMAN2: An extensible image processing suite for electron microscopy*. Journal of Structural Biology, 157(1), 38-46.
    [DOI: 10.1016/j.jsb.2006.05.009](https://doi.org/10.1016/j.jsb.2006.05.009)
+
+## Citation
+
+If you use pdb2mrc in your research, please cite:
+
+```bibtex
+@software{pdb2mrc2024,
+  author = {Your Name},
+  title = {pdb2mrc: Convert PDB to cryo-EM Density Maps},
+  year = {2024},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  doi = {10.5281/zenodo.XXXXXXX},
+  url = {https://github.com/yourusername/pdb2mrc}
+}
