@@ -188,7 +188,7 @@ Proper normalisation is critical for physically meaningful maps:
 
 ### EMmer / GEMMI Method
 
-The EMmer method, inspired by the GEMMI library [Wojdyr2022], uses the complete International Tables Vol. C coefficients (c4322.lib) to generate real-space density maps through direct summation of Gaussian functions. This approach provides highly accurate electron scattering factors by incorporating the full 5-Gaussian parameterization with temperature factor optimization.
+The EMmer method, inspired by the GEMMI library [Wojdyr2022], uses the complete International Tables Vol. C coefficients to generate real-space density maps through direct summation of Gaussian functions. This approach provides highly accurate electron scattering factors by incorporating the full 5-Gaussian parameterization with temperature factor optimization.
 
 #### Gaussian Coefficient Database
 
