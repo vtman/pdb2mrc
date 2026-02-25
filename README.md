@@ -26,10 +26,10 @@ A high-performance C++ library and command-line tool for generating cryo-EM dens
 ## Features
 
 - **Multiple Real-Space Map Generation Methods**:
+  - **Default**: The classic 5-Gaussian parameterization of electron scattering factors from International Tables for Crystallography [Peng1996] (B-factors are ignored)
   - **EMmer/GEMMI**: Method based on the complete International Tables Vol. C coefficients (c4322.lib) with Refmac-compatible blur, inspired by the GEMMI library [Wojdyr2022] — **uses per-element averaged B-factors**
-  - **Peng1996**: The classic 5-Gaussian parameterization of electron scattering factors from International Tables for Crystallography [Peng1996] — **optionally uses per-element averaged B-factors with `--use-bfac`**
-  - **ChimeraX**: UCSF ChimeraX `molmap` algorithm, which applies a single Gaussian blur to atomic coordinates [Goddard2018, Pettersen2020] — **does NOT use B-factors**
-  - **Situs**: Density projection method with multiple kernel choices (Gaussian, triangular, Epanechnikov) and configurable resolution definitions [Wriggers2010, Wriggers1999] — **does NOT use B-factors**
+  - **ChimeraX**: UCSF ChimeraX `molmap` algorithm, which applies a single Gaussian blur to atomic coordinates [Goddard2018, Pettersen2020] (B-factors are ignored)
+  - **Situs**: Density projection method with multiple kernel choices (Gaussian, triangular, Epanechnikov) and configurable resolution definitions [Wriggers2010, Wriggers1999] (B-factors are ignored)
 
 - **B-factor Analysis**:
   - Automatic calculation of per-element and global B-factor statistics for ALL methods (informational only)
