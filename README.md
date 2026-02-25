@@ -75,188 +75,118 @@ Different software packages use slightly different criteria, all of which are im
 
 
 
-## Default Method: Peng1996 with Per-Element FFT Convolution
 
-The default map generation method in pdb2mrc combines the accurate Peng1996 scattering factors with an efficient FFT-based convolution approach that processes each chemical element separately. This design choice enables both physical accuracy and computational efficiency.
+## Default Method: Peng1996 with Multi-Step Convolution
 
-### Theoretical Foundation
+The default map generation method in pdb2mrc treats density generation as a sequence of convolutions, each handling a different physical effect. This modular approach ensures both accuracy and computational efficiency.
 
-#### From Scattering Factors to Real-Space Density
+### The Convolution Chain
 
-The electron scattering factor for an element is parameterized as a sum of five Gaussians [Peng1996]:
+The complete density map can be expressed as a series of convolutions applied to the ideal atomic distribution:
 
-$$f_e(s) = \sum_{i=1}^{5} a_i \exp(-b_i s^2)$$
+$$\rho_{\text{final}} = \left( \sum_{\text{atoms}} \delta(\mathbf{r} - \mathbf{r}_j) \right) * K_{\text{element}} * G_{B_j} * G_{\text{res}}$$
 
-where $s = \sin\theta/\lambda$ is the scattering vector. The real-space density is obtained via inverse Fourier transform. For a 3D Gaussian in reciprocal space, its Fourier transform is another Gaussian in real space:
+where:
+- $\delta(\mathbf{r} - \mathbf{r}_j)$ is the ideal point source for atom $j$
+- $K_{\text{element}}$ is the element-specific 5-Gaussian kernel from Peng1996 (same for all atoms of a given element)
+- $G_{B_j}$ is the B-factor Gaussian for atom $j$ (varies per atom)
+- $G_{\text{res}}$ is the resolution Gaussian (same for all atoms)
 
-$$\mathcal{F}^{-1}\left[\exp(-b s^2)\right] = \frac{1}{(2\pi\sigma^2)^{3/2}} \exp\left(-\frac{r^2}{2\sigma^2}\right)$$
+Since convolution is associative and commutative, we can group these operations to maximize computational efficiency. Our implementation uses a two-step approach that separates per-atom variations from element-specific and global operations.
 
-where $\sigma^2 = \frac{b}{4\pi^2}$.
+### Step 1: Delta Function + B-factor Blurring (Combined)
 
-Therefore, the real-space density for a stationary atom (no thermal motion) at target resolution is:
+Instead of treating the delta function and B-factor blurring as separate steps, we combine them into a single operation for each atom. For atom $j$ with B-factor $B_j$, its contribution to the map is:
 
-$$\rho_{\text{element}}^0(\mathbf{r}) = \sum_{i=1}^{5} \frac{a_i}{(2\pi\sigma_i^2)^{3/2}} \exp\left(-\frac{|\mathbf{r}|^2}{2\sigma_i^2}\right)$$
+$$\rho_j(\mathbf{r}) = \delta(\mathbf{r} - \mathbf{r}_j) * G_{B_j}(\mathbf{r}) = \frac{1}{(2\pi\sigma_{B_j}^2)^{3/2}} \exp\left(-\frac{|\mathbf{r} - \mathbf{r}_j|^2}{2\sigma_{B_j}^2}\right)$$
 
-with $\sigma_i^2 = \frac{b_i}{4\pi^2} + \sigma_{\text{res}}^2$, where $\sigma_{\text{res}}$ is determined by the target resolution using the chosen criterion (Rayleigh, ChimeraX, or EMAN2).
+where $\sigma_{B_j}^2 = \frac{B_j}{8\pi^2}$.
 
-#### Incorporating B-factors
+For each atom, we distribute its contribution to nearby grid points using a Gaussian whose width is determined by its B-factor. The weight assigned to each voxel is calculated by integrating the Gaussian over the voxel volume, which can be done analytically using error functions. This ensures that the sum of all weights for an atom exactly equals its occupancy.
 
-When an atom has a non-zero B-factor (temperature factor), it represents additional Gaussian broadening due to thermal motion. In reciprocal space, this multiplies the scattering factor by $\exp(-B s^2 / 4)$. In real space, this corresponds to an additional convolution with a Gaussian of width $\sigma_B^2 = B/(8\pi^2)$.
+This creates a **B-factor blurred map** $\rho_{B,\text{element}}(\mathbf{r})$ for each element type, where each atom's contribution is already spread according to its thermal motion. Importantly, this map still represents the density at **infinite resolution** - only thermal motion has been applied.
 
-The complete density for an atom with B-factor $B$ becomes:
+### Step 2: Element Kernel + Resolution Blurring (Combined)
 
-$$\rho_{\text{atom}}(\mathbf{r}) = \rho_{\text{element}}^0(\mathbf{r}) * G_B(\mathbf{r})$$
+After B-factor blurring, we need to apply two remaining convolutions:
+- The element-specific kernel $K_{\text{element}}$ (from Peng1996 coefficients)
+- The resolution-dependent Gaussian $G_{\text{res}}$
 
-where $G_B(\mathbf{r})$ is a Gaussian with variance $\sigma_B^2$, and $*$ denotes convolution.
+Both are identical for all atoms of a given element, so we combine them into a single kernel and apply it in Fourier space:
 
-### Core Strategy: Separation of Concerns
+$$\rho_{\text{element}}(\mathbf{r}) = \rho_{B,\text{element}}(\mathbf{r}) * \left( K_{\text{element}} * G_{\text{res}} \right)$$
 
-A key insight in our implementation is the separation of the density generation into two stages, based on what varies per atom versus what is constant per element:
+The Fourier transforms have simple analytical forms:
 
-| Component | Varies By | Treatment |
-|-----------|-----------|-----------|
-| Element-specific kernel ($a_i$, $b_i$) | Element only | Precomputed per element |
-| Resolution blur ($\sigma_{\text{res}}$) | Global (same for all) | Applied in Fourier space |
-| B-factor broadening ($B$) | Per atom | Applied in real space during projection |
-| Atomic position ($\mathbf{r}_j$) | Per atom | Handled in real space |
+$$\mathcal{F}[K_{\text{element}}](s) = \sum_{i=1}^{5} a_i \exp\left(-\frac{b_i s^2}{4\pi^2}\right)$$
 
-This separation allows us to write the total density as:
+$$\mathcal{F}[G_{\text{res}}](s) = \exp\left(-\frac{\sigma_{\text{res}}^2 s^2}{2}\right)$$
 
-$$\rho(\mathbf{r}) = \sum_{\text{elements}} \left[ \left( \sum_{\text{atoms of element}} \delta(\mathbf{r} - \mathbf{r}_j) * G_{B_j}(\mathbf{r}) \right) * \rho_{\text{element}}^0(\mathbf{r}) \right]$$
+The combined kernel in Fourier space is therefore:
 
-### Two-Stage Implementation
+$$K_{\text{combined}}(s) = \left( \sum_{i=1}^{5} a_i \exp\left(-\frac{b_i s^2}{4\pi^2}\right) \right) \times \exp\left(-\frac{\sigma_{\text{res}}^2 s^2}{2}\right)$$
 
-#### Stage 1: B-factor Blurring (Real Space)
+For each element type, we:
+- Perform a forward FFT of the B-factor blurred map
+- Multiply by the combined kernel in Fourier space
+- Perform an inverse FFT to obtain the final map for that element
+- Sum all element maps to produce the complete density map
 
-For each atom, we distribute its contribution to nearby grid points using a Gaussian whose width is determined **only by its B-factor**:
+### Visual Representation of the Convolution Chain
 
-$$w_{ijk}^{(B)} = \text{occupancy} \times \iiint_{\text{voxel}} \frac{1}{(2\pi\sigma_B^2)^{3/2}} \exp\left(-\frac{|\mathbf{r} - \mathbf{r}_{\text{atom}}|^2}{2\sigma_B^2}\right) d^3\mathbf{r}$$
+```
+Physical Process:    δ(r - r_j)  →  Thermal motion  →  Element kernel  →  Resolution blur
+                    (point atom)      (G_B_j)           (K_element)        (G_res)
 
-where $\sigma_B^2 = B/(8\pi^2)$. This creates a **B-factor blurred delta-map** $\rho_B(\mathbf{r})$ for each element type:
-
-$$\rho_{B,\text{element}}(\mathbf{r}) = \sum_{\text{atoms of element}} \text{occupancy}_j \times G_{B_j}(\mathbf{r} - \mathbf{r}_j)$$
-
-The integral over each voxel is computed analytically using error functions, as described in the [Enhanced Real-Space Integration](#enhanced-real-space-integration) section.
-
-#### Stage 2: Resolution Blurring + Element Kernel (Fourier Space)
-
-The B-factor blurred map for each element is then processed using FFT-based convolution to apply both the resolution-dependent Gaussian and the element-specific multi-Gaussian kernel:
-
-$$\rho_{\text{element}}(\mathbf{r}) = \rho_{B,\text{element}}(\mathbf{r}) * G_{\text{res}}(\mathbf{r}) * \rho_{\text{element}}^0(\mathbf{r})$$
-
-In Fourier space, convolution becomes multiplication:
-
-$$\mathcal{F}[\rho_{\text{element}}] = \mathcal{F}[\rho_{B,\text{element}}] \times \mathcal{F}[G_{\text{res}}] \times \mathcal{F}[\rho_{\text{element}}^0]$$
-
-The combined kernel in Fourier space is:
-
-$$K_{\text{total}}(s) = \exp\left(-\frac{\sigma_{\text{res}}^2 s^2}{2}\right) \times \sum_{i=1}^{5} a_i \exp(-b_i s^2)$$
-
-### Analytical Fourier Transforms
-
-The Fourier transforms of our components have simple analytical forms:
-
-| Real Space | Fourier Space |
-|------------|---------------|
-| $\frac{1}{(2\pi\sigma^2)^{3/2}} \exp\left(-\frac{r^2}{2\sigma^2}\right)$ | $\exp\left(-\frac{\sigma^2 s^2}{2}\right)$ |
-| $\rho_{\text{element}}^0(\mathbf{r}) = \sum_i \frac{a_i}{(2\pi\sigma_i^2)^{3/2}} \exp\left(-\frac{r^2}{2\sigma_i^2}\right)$ | $\sum_i a_i \exp\left(-\frac{\sigma_i^2 s^2}{2}\right) = \sum_i a_i \exp\left(-\frac{b_i s^2}{4\pi^2} - \frac{\sigma_{\text{res}}^2 s^2}{2}\right)$ |
-| $G_{\text{res}}(\mathbf{r})$ with $\sigma_{\text{res}}^2$ | $\exp\left(-\frac{\sigma_{\text{res}}^2 s^2}{2}\right)$ |
-
-This analytical tractability is what makes the FFT approach so efficient.
-
-### Resolution Handling Options
-
-pdb2mrc provides three modes for handling resolution and B-factors:
-
-#### Option 1: Target Resolution Only (Default)
-
-When only a target resolution $R$ is specified (and B-factors are ignored), we set:
-
-$$\sigma_{\text{res}}^2 = \left(\frac{R}{1.665}\right)^2$$ (for Rayleigh criterion)
-
-and $\sigma_B^2 = 0$. The map is generated in a single FFT pass per element, combining resolution blur and element kernel.
-
-This is the fastest option, suitable for most visualization needs.
-
-#### Option 2: High-Resolution Base Map + Post-Blurring
-
-For workflows requiring multiple maps at different resolutions from the same structure:
-
-1. **Generate a high-resolution base map** at resolution $R_{\text{high}}$ (e.g., 2-3 Å), optionally including B-factors:
-
-   $$\rho_{\text{base}}(\mathbf{r}) = \sum_{\text{elements}} \left[ \rho_{B,\text{element}}(\mathbf{r}) * G_{\text{res,high}}(\mathbf{r}) * \rho_{\text{element}}^0(\mathbf{r}) \right]$$
-
-2. **Blur to target resolution** $R_{\text{target}} > R_{\text{high}}$ by applying an additional Gaussian blur:
-
-   $$\rho_{\text{target}}(\mathbf{r}) = \rho_{\text{base}}(\mathbf{r}) * G_{\text{extra}}(\mathbf{r})$$
-
-   where $\sigma_{\text{extra}}^2 = \sigma_{\text{target}}^2 - \sigma_{\text{high}}^2$.
-
-This approach is efficient when generating maps at multiple resolutions (e.g., for multi-scale analysis or fitting).
-
-#### Option 3: Full B-factor + Resolution (Most Accurate)
-
-When both B-factors and target resolution are specified, we use the full two-stage process:
-
-- Stage 1 applies per-atom B-factor blurring in real space
-- Stage 2 applies resolution blur and element kernel in Fourier space
-
-This produces the most physically accurate maps, correctly modeling both thermal motion and instrumental resolution.
-
-### Algorithm Summary
-
-```cpp
-// Stage 1: Real-space B-factor blurring
-for each element type:
-    allocate grid element_grid[size]
-    for each atom of this element:
-        addAtomWithBfactor(atom, element_grid)  // Gaussian integration
-
-// Stage 2: Fourier-space processing
-for each element type:
-    // Forward FFT
-    DftiComputeForward(fft_desc, element_grid, fft_buffer)
-    
-    // Apply combined kernel in Fourier space
-    for each frequency s:
-        fft_buffer[s] *= K_total(s)  // element kernel + resolution
-    
-    // Inverse FFT
-    DftiComputeBackward(fft_desc, fft_buffer, element_grid)
-    
-    // Add to final map
-    addToFinalMap(element_grid)
+Our Implementation:
+Step 1 (Real space):  δ(r - r_j) * G_B_j  =  ρ_B(r)  [B-factor blurred map]
+Step 2 (Fourier space):  ρ_B(r) * (K_element * G_res)  =  ρ_final(r)
 ```
 
-### Computational Efficiency
+### Why This Grouping is Optimal
 
-The per-element FFT convolution strategy offers significant advantages:
+| Step | Domain | Handles | Advantages |
+|------|--------|---------|------------|
+| **Step 1: δ + G_B** | Real space | Per-atom B-factors | • Natural for varying B-values<br>• Adaptive neighborhood based on individual B-factors<br>• Exact occupancy conservation |
+| **Step 2: K_element + G_res** | Fourier space | Element kernels + resolution | • Single kernel per element type<br>• Efficient FFT-based convolution<br>• Resolution blur applied uniformly |
 
-| Aspect | Traditional Approach | pdb2mrc Approach |
-|--------|---------------------|------------------|
-| B-factor handling | Different kernel per atom | Unified in real space |
-| FFT operations | One per atom (intractable) | One per element (5-10 total) |
-| Memory | Store all atom contributions | One grid per element |
-| Scaling | O(atoms × grid) | O(elements × N log N) |
+This separation minimizes computational cost while maintaining physical accuracy. The expensive per-atom operations are confined to real space and scale linearly with atom count, while the FFT operations scale as $O(E \times N \log N)$ where $E$ is the number of unique elements (typically 5-10) and $N$ is the grid size.
 
-For a typical protein with 10,000 atoms and 8 unique elements:
-- Traditional approach: 10,000 FFTs (impossible)
-- pdb2mrc approach: 8 FFTs (efficient)
+### Kernel Normalization
 
-### Validation
+Proper normalization is critical for physically meaningful maps:
 
-The two-stage approach preserves key physical properties:
+1. **B-factor kernel**: After discretization, the sum of weights assigned to all grid points for a single atom exactly equals its occupancy. This is guaranteed by the analytic integration over voxel volumes.
 
-1. **Occupancy conservation**: The total density integral equals $\sum \text{occupancy}_j \times f_e(0)$ for each element
-2. **B-factor broadening**: Atoms with larger B-factors contribute to more voxels, correctly modeling thermal motion
-3. **Resolution fidelity**: The final map has the specified resolution according to the chosen criterion
+2. **Combined kernel** (element + resolution): After discretization onto the grid, we normalize so that the sum of all kernel values equals the element's scattering power at zero angle:
+   
+   $$\sum_{i,j,k} K_{\text{combined}}^{\text{grid}}(i,j,k) = f_e(0) = \sum_{i=1}^{5} a_i$$
 
-This combination of physical accuracy and computational efficiency makes pdb2mrc suitable for a wide range of applications, from quick visualization to high-resolution refinement workflows.
+   This is achieved by evaluating the continuous kernel at grid points, computing the total sum $S$, then scaling all values by $f_e(0)/S$.
 
+### Verification: Conservation of Total Density
 
+After both steps, the total density in the map satisfies a fundamental conservation law:
 
+$$\iiint \rho_{\text{final}}(\mathbf{r}) \, d^3\mathbf{r} = \sum_{\text{atoms}} \text{occupancy}_j \times f_e(0)_{\text{element}_j}$$
 
+This means the map integral equals the sum of each atom's occupancy multiplied by its element's scattering power. This serves as a key validation check in our implementation.
 
+### Flexibility Through Modular Design
+
+The two-step approach offers significant practical advantages:
+
+| Scenario | Step 1 (B-factors) | Step 2 (Element+Resolution) |
+|----------|-------------------|------------------------------|
+| No B-factors, single resolution | Fast 8-point trilinear interpolation | One FFT per element |
+| With B-factors, single resolution | Full Gaussian integration (slower but accurate) | One FFT per element |
+| Multiple resolutions from same data | Compute once (expensive) | Recompute with different $\sigma_{\text{res}}$ (cheap FFTs) |
+
+For example, to generate maps at 5Å, 8Å, and 10Å from the same structure:
+- Run Step 1 once (the expensive per-atom B-factor blurring)
+- Run Step 2 three times with different resolution kernels
+
+This makes multi-resolution analysis extremely efficient, enabling rapid generation of map series for multi-scale fitting or resolution-dependence studies.
 
 
 
