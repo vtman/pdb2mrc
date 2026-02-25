@@ -127,29 +127,71 @@ $$\rho(r) = 0 \quad\text{for}\quad r > n\sigma$$
 
 This method is computationally efficient and produces maps that closely match those from the ChimeraX `molmap` command.
 
+
+
+
+
+
+
 ### Situs Method
 
-The Situs package [4] offers multiple kernel types with flexible resolution definitions. The user can specify resolution either as:
-- **Half-max radius** $r_h$ (positive value)
-- **$2\sigma$** (negative value)
+The Situs method implemented here follows the real-space convolution approach established in the Situs package [4, 9]. It generates a density map by first projecting atomic structures onto a grid and then smoothing the result with a kernel function. This two-step process is designed to produce maps that correspond to a user-specified resolution.
+
+#### Kernel Functions
+
+The method offers five distinct kernel types, each with a different mathematical form. The choice of kernel affects the shape of the resulting density. The kernels are defined as functions of the distance $r$ from the kernel center. Two key parameters define the kernel's width:
+
+*   **Half-max radius** ($r_h$): The distance at which the kernel's value drops to half of its maximum.
+*   **Situs resolution** ($r_s$): An empirical resolution measure defined as $r_s = 2\sigma$, where $\sigma$ is the standard deviation of a 3D Gaussian kernel. The relationship between $r_s$ and the half-max radius is kernel-dependent.
+
+The user can specify the target resolution in two modes:
+1.  **Half-max radius mode** (positive input value): The input value is used directly as $r_h$.
+2.  **$2\sigma$ mode** (negative input value): The absolute input value is used as $r_s$, and $r_h$ is calculated accordingly.
 
 The kernel functions are:
 
 | Kernel Type | Function $K(r)$ | Half-max relation |
-|-------------|----------------------|-------------------|
-| Gaussian | $\exp(-1.5 r^2/\sigma^2)$ | $r_h = \sigma\sqrt{\ln 2 / 1.5}$ |
-| Triangular | $1 - r/(2r_h)$ | $r_h$ = half-max radius |
-| Semi-Epanechnikov | $1 - (r/r_h)^{1.5}$ | $r_h$ = half-max radius |
-| Epanechnikov | $1 - (r/r_h)^2$ | $r_h$ = half-max radius |
-| Hard Sphere | $1 - (r/r_h)^{60}$ | $r_h$ = half-max radius |
+| :--- | :--- | :--- |
+| **Gaussian** | $\exp\left(-\dfrac{3r^2}{2\sigma^2}\right)$ | $r_h = \sigma\sqrt{\dfrac{\ln 2}{1.5}}$ |
+| **Triangular** | $\max\left(0, 1 - \dfrac{r}{2r_h}\right)$ | $r_h$ is the half-max radius |
+| **Semi-Epanechnikov** | $\max\left(0, 1 - \dfrac{r^{1.5}}{2r_h^{1.5}}\right)$ | $r_h$ is the half-max radius |
+| **Epanechnikov** | $\max\left(0, 1 - \dfrac{r^2}{2r_h^2}\right)$ | $r_h$ is the half-max radius |
+| **Hard Sphere** | $\max\left(0, 1 - \dfrac{r^{60}}{2r_h^{60}}\right)$ | $r_h$ is the half-max radius |
 
-The map generation follows a two-step process:
-1. **Projection**: Atoms are projected onto a lattice using trilinear interpolation, with each atom contributing to the 8 surrounding voxels
-2. **Convolution**: The lattice is convolved with the chosen kernel to produce the final density map
+The **Epanechnikov kernel** is a special case, as it is known to be optimal for minimizing the asymptotic mean integrated square error in kernel density estimation [10].
 
-The lattice variance correction accounts for the smoothing introduced by the initial projection:
+#### Map Generation Workflow
+
+The map generation follows a two-step process, consistent with the description of the `pdb2vol` tool from the Situs documentation [11]:
+
+1.  **Projection to Lattice**: Atoms are projected onto a cubic lattice using **trilinear interpolation**. Each atom, with a given position and weight (atomic mass or unity), contributes to the eight surrounding voxels. This creates an intermediate "lattice" representation of the structure.
+
+2.  **Kernel Convolution**: The lattice is then convolved with the selected 3D kernel. This step smooths the structure to the desired resolution and produces the final density map. The kernel's width is determined by the user-specified resolution and kernel type, as described above.
+
+#### Lattice Variance Correction
+
+The initial projection onto a lattice introduces an inherent, small amount of blurring. An optional correction can be applied that accounts for this lattice smoothing. This is achieved by adjusting the kernel's variance:
 
 $$\sigma_{\text{corrected}}^2 = \sigma_{\text{target}}^2 - \sigma_{\text{lattice}}^2$$
+
+where $\sigma_{\text{target}}$ is the width required to achieve the desired resolution, and $\sigma_{\text{lattice}}$ is the standard deviation of the point-spread function introduced by the trilinear projection. This correction ensures that the final map more accurately matches the target resolution [4, 12].
+
+#### References for Situs Method
+
+4. **Situs**: Wriggers, W. (2010). *Using Situs for the integration of multi-resolution structures*. Biophysical Reviews, 2(1), 21-27. [DOI: 10.1007/s12551-009-0024-5](https://doi.org/10.1007/s12551-009-0024-5)
+
+9. **Original Situs Paper**: Wriggers, W., Milligan, R.A., & McCammon, J.A. (1999). *Situs: A package for docking crystal structures into low-resolution maps from electron microscopy*. Journal of Structural Biology, 125(2-3), 185-195. [DOI: 10.1006/jsbi.1998.4080](https://doi.org/10.1006/jsbi.1998.4080)
+
+10. **Epanechnikov Kernel**: Epanechnikov, V.A. (1969). *Non-parametric estimation of a multivariate probability density*. Theory of Probability & Its Applications, 14(1), 153-158. [DOI: 10.1137/1114019](https://doi.org/10.1137/1114019)
+
+11. **pdb2vol Documentation**: Situs online documentation. *pdb2vol - Create a Volumetric Map from a PDB*. [https://situs.biomachina.org](https://situs.biomachina.org)
+
+12. **Conventions Paper**: Wriggers, W. (2012). *Conventions and workflows for using Situs*. Acta Crystallographica Section D, 68(4), 344-351. [DOI: 10.1107/S0907444911049791](https://doi.org/10.1107/S0907444911049791)
+
+
+
+
+
 
 ### EMmer / GEMMI Method
 
