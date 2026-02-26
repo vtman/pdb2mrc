@@ -189,7 +189,12 @@ Proper normalisation is critical for physically meaningful maps:
 
 
 
-***
+
+
+
+
+
+---
 
 ### EMmer / GEMMI Method
 
@@ -260,14 +265,9 @@ $$r_{\text{cut}} = \max_i \sqrt{\frac{\ln(a_i / \text{cutoff})}{-w_i}}$$
 
 where $w_i$ is the width parameter for the i-th Gaussian.
 
-#### Symmetry Expansion
-
-When working with crystallographic data, the method can optionally apply space group symmetry to expand the asymmetric unit atoms throughout the unit cell. This ensures that the final map includes all symmetry-related density contributions, essential for crystal structure visualization and validation.
-
 #### Output Alignment
 
-For compatibility with standard visualization tools, the EMmer method includes an optional output alignment step that applies the MRC/CCP4 convention for map orientation. This ensures that the generated maps display correctly in programs like ChimeraX, Coot, and PyMOL without requiring manual reorientation.
-
+For compatibility with standard visualization tools, the EMmer method includes an optional output alignment step (enabled by default) that applies the MRC/CCP4 convention for map orientation. This ensures that the generated maps display correctly in programs like ChimeraX, Coot, and PyMOL without requiring manual reorientation.
 
 
 ***
@@ -324,24 +324,14 @@ The core computation in `gaussian.cpp` [ChimeraXSource] implements an optimized 
 
    $$\rho(i,j,k) \mathrel{+}= Z \cdot \exp\left(-\frac{1}{2}\left[\left(\frac{i-i_c}{\sigma/s}\right)^2 + \left(\frac{j-j_c}{\sigma/s}\right)^2 + \left(\frac{k-k_c}{\sigma/s}\right)^2\right]\right)$$
 
-#### Normalization
+#### Normalisation
 
-After summation, the map is normalized by:
+After summation, the map is normalised by:
 
 $$\rho_{\text{norm}}(\mathbf{r}) = \rho(\mathbf{r}) \cdot (2\pi)^{-3/2} \sigma^{-3}$$
 
-This normalization ensures that the integral of each Gaussian equals its atomic number $Z$. The final map is then scaled to a maximum value of 1.0 for visualization compatibility [Pettersen2020].
+This normalisation ensures that the integral of each Gaussian equals its atomic number $Z$. The final map is then scaled to a maximum value of 1.0 for visualization compatibility [Pettersen2020].
 
-#### Balls Mode
-
-An alternative representation using "balls" with Gaussian falloff is available when balls=True. In this mode, each atom contributes a constant value of 1 within its van der Waals radius $r_{\text{vdW}}$, with a Gaussian falloff outside:
-
-$$\rho_i(\mathbf{r}) = \begin{cases} 
-1 & |\mathbf{r} - \mathbf{r}_i| \leq r_{\text{vdW}} \\
-\exp\left(-\frac{1}{2}\left(\frac{|\mathbf{r} - \mathbf{r}_i| - r_{\text{vdW}}}{\sigma}\right)^2\right) & |\mathbf{r} - \mathbf{r}_i| > r_{\text{vdW}}
-\end{cases}$$
-
-This mode produces maps where isosurfaces approximate the van der Waals envelope when contoured at low levels [Goddard2018].
 
 
 
@@ -392,14 +382,15 @@ The map generation follows a two-step process, consistent with the description o
 
 2. **Kernel Convolution**: The lattice is then convolved with the selected 3D kernel. This step smooths the structure to the desired resolution and produces the final density map. The kernel's width is determined by the user-specified resolution and kernel type, as described above.
 
-#### Lattice Variance Correction
 
-The initial projection onto a lattice introduces an inherent, small amount of blurring. An optional correction can be applied that accounts for this lattice smoothing [Wriggers2012]. This is achieved by adjusting the kernel's variance:
+#### Lattice Smoothing
+The initial projection onto a lattice using trilinear interpolation introduces an inherent, small amount of blurring. An optional correction can be applied that attempts to account for this lattice smoothing:
 
-$$\sigma_{\text{corrected}}^2 = \sigma_{\text{target}}^2 - \sigma_{\text{lattice}}^2$$
+$$\sigma_{\text{corrected}}^2 = \sigma_{\text{target}}^2 - \sigma_{\text{lattice}}^2$$ 
 
-where $\sigma_{\text{target}}$ is the width required to achieve the desired resolution, and $\sigma_{\text{lattice}}$ is the standard deviation of the point-spread function introduced by the trilinear projection. This correction ensures that the final map more accurately matches the target resolution [Wriggers2010, Wriggers1999].
+where $\sigma_{\text{target}}$ is the width required to achieve the desired resolution, and $\sigma_{\text{lattice}}$ is the estimated standard deviation of the point-spread function introduced by the trilinear projection.
 
+Note: In the current implementation, the lattice variance calculation is simplified. For accurate results, it's recommended to use a fine enough grid spacing that the lattice smoothing contribution is negligible compared to the target resolution.
 
 ***
 
@@ -455,7 +446,6 @@ where $\sigma_{\text{target}}$ is the width required to achieve the desired reso
 | Parameter | Format | Default | Description |
 |-----------|--------|---------|-------------|
 | `--cutoff` | float | 5.0 | Cutoff range in sigma ($n\sigma$) |
-| `--no-norm` | flag | - | Skip final normalization to maximum 1.0 |
 
 The ChimeraX method uses the following relationships:
 
@@ -506,7 +496,6 @@ The ChimeraX method uses the following relationships:
 | `--emmer-refmac-blur` | flag | on | Apply Refmac-compatible blur |
 | `--emmer-no-blur` | flag | - | Skip Refmac blur |
 | `--emmer-blur` | float | 0.0 | Manual blur value in Å² (0 = auto) |
-| `--emmer-symmetry` | flag | on | Apply space group symmetry |
 | `--emmer-no-symmetry` | flag | - | Skip symmetry expansion |
 | `--emmer-cutoff` | float | 1e-5 | Density cutoff for radius determination |
 | `--emmer-rate` | float | 1.5 | Shannon rate for grid spacing |
