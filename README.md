@@ -65,7 +65,7 @@ Different software packages use slightly different criteria, all of which are im
 
 ***
 
-### Default Method (Peng1996)
+### Default Method
 
 The default map generation method in pdb2mrc treats density generation as a convolution of the atomic distribution with element-specific kernels derived from Peng1996 coefficients.
 
