@@ -188,6 +188,8 @@ where $w_i$ is the width parameter for the i-th Gaussian.
 
 For compatibility with standard visualization tools, the EMmer method includes an optional output alignment step (enabled by default) that applies the MRC/CCP4 convention for map orientation. This ensures that the generated maps display correctly in programs like ChimeraX, Coot, and PyMOL without requiring manual reorientation.
 
+**Note:** The current implementation focuses on isolated structures (space group P1) without symmetry expansion. Unit cell parameters, if provided, are used only for grid dimension calculation.
+
 
 ***
 
@@ -394,6 +396,7 @@ The ChimeraX method uses the following relationships:
 | Half-max radius | positive value | $r_h =$ input value |
 | $2\sigma$ mode | negative value | $r_s = \|\text{input}\|$, $\sigma = r_s/2$ |
 
+
 ### EMmer-Specific Parameters
 
 | Parameter | Format | Default | Description |
@@ -403,7 +406,6 @@ The ChimeraX method uses the following relationships:
 | `--emmer-refmac-blur` | flag | on | Apply Refmac-compatible blur |
 | `--emmer-no-blur` | flag | - | Skip Refmac blur |
 | `--emmer-blur` | float | 0.0 | Manual blur value in Å² (0 = auto) |
-| `--emmer-no-symmetry` | flag | - | Skip symmetry expansion |
 | `--emmer-cutoff` | float | 1e-5 | Density cutoff for radius determination |
 | `--emmer-rate` | float | 1.5 | Shannon rate for grid spacing |
 
@@ -433,6 +435,7 @@ ChimeraX mode with custom cutoff:
 Situs with Epanechnikov kernel:
 
 <tt>pdb2mrc -i 1ake.pdb -o 1ake_situs.mrc --method situs --situs-kernel-type epanechnikov --situs-halfmax 8.0 --situs-correction</tt>
+
 
 EMmer with manual blur:
 
