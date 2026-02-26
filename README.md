@@ -312,7 +312,7 @@ The map grid is generated using the following steps:
 
 4. **Cubic Option**: If cube=True, all dimensions are set to the maximum and made even: $n = \max(n_x, n_y, n_z)$, $n \leftarrow n + (n \bmod 2)$.
 
-5. **Origin**: Set the grid origin to the minimum coordinates: $\mathbf{r}_{\text{origin}} = (x_{\min}, y_{\min}, z_{\min})$.
+5. **Origin**: Set the grid origin to the minimum coordinates: $r_{\text{origin}} = (x_{min}, y_{min}, z_{min})$.
 
 #### Core Algorithm Implementation
 
