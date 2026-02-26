@@ -12,7 +12,6 @@ A high-performance C++ library and command-line tool for generating cryo-EM dens
   - [Resolution Definition](#resolution-definition)
   - [Default Method](#default-method)
   - [EMmer / GEMMI Method](#emmer--gemmi-method)
-  - [Peng1996 / International Tables Method](#peng1996--international-tables-method)
   - [ChimeraX molmap Method](#chimerax-molmap-method)
   - [Situs Method](#situs-method)
 - [Input Parameters](#input-parameters)
