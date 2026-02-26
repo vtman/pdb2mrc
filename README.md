@@ -448,19 +448,61 @@ Full filtering options (water always filtered):
 
 ## Building the Project
 
-### Dependencies
+### Prerequisites
 
-- **Intel oneAPI Base Toolkit & Intel oneAPI HPC Toolkit**: Provides Intel IPP (Integrated Performance Primitives) and MKL (Math Kernel Library) for FFT operations and optimized vector functions.
-- **CMake** (version 3.12 or higher): For cross-platform build configuration.
-- **OpenMP**: For shared-memory parallelization (usually included with modern compilers).
-- **C++17 compliant compiler**: e.g., GCC 7+, Clang 5+, MSVC 2017+.
+- CMake 3.15 or higher
+- C++11 compatible compiler (GCC, Clang, MSVC)
+- Intel Math Kernel Library (MKL)
+- Intel Integrated Performance Primitives (IPP)
+- OpenMP support
 
 ### Build Instructions
 
-<tt>mkdir build</tt>
-<tt>cd build</tt>
-<tt>cmake ..</tt>
-<tt>make</tt>
+```bash
+# Clone the repository
+git clone https://github.com/vtman/pdb2mrc.git
+cd pdb2mrc
+
+# Create build directory
+mkdir build && cd build
+
+# Configure with CMake
+cmake .. -DCMAKE_BUILD_TYPE=Release \
+         -DCMAKE_INSTALL_PREFIX=/usr/local \
+         -DIPP_ROOT_DIR=/path/to/ipp \
+         -DMKL_ROOT_DIR=/path/to/mkl
+
+# Build
+make -j$(nproc)
+'''
+
+
+CMake Options
+Option	Description	Default
+PDB2MRC_BUILD_SHARED	Build shared library	OFF
+PDB2MRC_ENABLE_OPENMP	Enable OpenMP parallelization	ON
+PDB2MRC_ENABLE_TESTS	Build tests	OFF
+PDB2MRC_ENABLE_EXAMPLES	Build examples	OFF
+PDB2MRC_VERBOSE_CONFIG	Print verbose configuration	OFF
+Finding Intel Libraries
+The build system will search for Intel MKL and IPP in standard locations. You can specify custom paths using:
+
+-DIPP_ROOT_DIR=/path/to/ipp
+
+-DMKL_ROOT_DIR=/path/to/mkl
+
+Or set environment variables:
+
+IPPROOT or INTEL_IPP_ROOT for IPP
+
+MKLROOT or INTEL_MKL_ROOT for MKL
+
+
+
+
+
+
+
 
 ## References
 
