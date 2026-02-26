@@ -476,26 +476,31 @@ cmake .. -DCMAKE_BUILD_TYPE=Release \
 make -j$(nproc)
 ```
 
+## CMake Options
 
-CMake Options
-Option	Description	Default
-PDB2MRC_BUILD_SHARED	Build shared library	OFF
-PDB2MRC_ENABLE_OPENMP	Enable OpenMP parallelization	ON
-PDB2MRC_ENABLE_TESTS	Build tests	OFF
-PDB2MRC_ENABLE_EXAMPLES	Build examples	OFF
-PDB2MRC_VERBOSE_CONFIG	Print verbose configuration	OFF
-Finding Intel Libraries
+| Option | Description | Default |
+|--------|-------------|---------|
+| `PDB2MRC_BUILD_SHARED` | Build shared library | OFF |
+| `PDB2MRC_ENABLE_OPENMP` | Enable OpenMP parallelization | ON |
+| `PDB2MRC_ENABLE_TESTS` | Build tests | OFF |
+| `PDB2MRC_ENABLE_EXAMPLES` | Build examples | OFF |
+| `PDB2MRC_VERBOSE_CONFIG` | Print verbose configuration | OFF |
+
+## Finding Intel Libraries
+
 The build system will search for Intel MKL and IPP in standard locations. You can specify custom paths using:
 
--DIPP_ROOT_DIR=/path/to/ipp
-
--DMKL_ROOT_DIR=/path/to/mkl
+| Option | Description |
+|--------|-------------|
+| `-DIPP_ROOT_DIR=/path/to/ipp` | Path to Intel IPP installation |
+| `-DMKL_ROOT_DIR=/path/to/mkl` | Path to Intel MKL installation |
 
 Or set environment variables:
 
-IPPROOT or INTEL_IPP_ROOT for IPP
-
-MKLROOT or INTEL_MKL_ROOT for MKL
+| Environment Variable | Description |
+|---------------------|-------------|
+| `IPPROOT` or `INTEL_IPP_ROOT` | Root directory for Intel IPP |
+| `MKLROOT` or `INTEL_MKL_ROOT` | Root directory for Intel MKL |
 
 
 
