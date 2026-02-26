@@ -243,11 +243,37 @@ int Scattering::get_index(const ScatteringTable* table, const char* element) {
     return -1;
 }
 
-// Real-space density from Peng 1996 parameters with resolution broadening
-Ipp64f Scattering::atom_density_at_r(const ScatteringEntry* entry,
-    Ipp64f r, Ipp64f sigma_res) {
+/**
+ * @brief Convert resolution to Gaussian sigma based on criterion
+ */
+static Ipp64f resolution_to_sigma_impl(Ipp64f resolution, ResolutionCriterion criterion) {
+    switch (criterion) {
+    case CRITERION_RAYLEIGH:
+        return resolution / 1.665;
+    case CRITERION_CHIMERAX:
+        return resolution / (M_PI * M_SQRT2);
+    case CRITERION_EMAN2:
+        return resolution / (M_PI * sqrt(8.0));
+    default:
+        return resolution / 1.665;
+    }
+}
 
+/**
+ * @brief Calculate atomic density at distance r including resolution blur
+ *
+ * Implements the combined element+resolution kernel from README:
+ * K_combined(s) = (∑ a_i exp(-b_i s²/4π²)) × exp(-σ_res² s²/2)
+ *
+ * In real space, this becomes a sum of Gaussians with widths:
+ * σ_total² = b_i/(4π²) + σ_res²
+ */
+Ipp64f Scattering::atom_density_at_r(const ScatteringEntry* entry,
+    Ipp64f r, Ipp64f resolution, ResolutionCriterion criterion) {
+
+    Ipp64f sigma_res = resolution_to_sigma_impl(resolution, criterion);
     Ipp64f val = 0.0;
+
     for (int g = 0; g < N_GAUSS; g++) {
         // σ_total² = b/(4π²) + σ_res²
         Ipp64f sigma2 = entry->b[g] / (4.0 * M_PI * M_PI) + sigma_res * sigma_res;
@@ -259,6 +285,7 @@ Ipp64f Scattering::atom_density_at_r(const ScatteringEntry* entry,
 
 int Scattering::precompute_profiles(const ScatteringTable* table,
     Ipp64f resolution,
+    ResolutionCriterion criterion,
     Ipp64f grid_spacing,
     Ipp64f cutoff_level,
     AmplitudeMode amplitude_mode,
@@ -269,15 +296,13 @@ int Scattering::precompute_profiles(const ScatteringTable* table,
 
     if (!table || !profiles || !n_profiles || !atoms || n_atoms <= 0) return -1;
 
-    // Convert resolution to sigma based on Rayleigh criterion
-    Ipp64f sigma_res = resolution / 1.665;
-
-    printf("\n=== Profile Calculation at Resolution %.2f A ===\n", resolution);
-    printf("Sigma_res = %.6f A\n", sigma_res);
+    printf("\n=== Profile Calculation ===\n");
+    printf("Resolution: %.2f A\n", resolution);
+    printf("Criterion: %s\n", criterion_name(criterion));
+    printf("Sigma_res = %.6f A\n", resolution_to_sigma_impl(resolution, criterion));
     printf("Grid spacing = %.6f A (reference)\n", grid_spacing);
     printf("Cutoff level = %.6f of max\n", cutoff_level);
-    printf("Amplitude mode = %s\n", amplitude_mode_name(amplitude_mode));
-    printf("Profile points = %d (constant)\n\n", PROFILE_POINTS);
+    printf("Amplitude mode = %s\n\n", amplitude_mode_name(amplitude_mode));
 
     // First, find which elements are actually present in the atoms
     int element_present[MAX_ELEMENTS] = { 0 };
@@ -320,7 +345,7 @@ int Scattering::precompute_profiles(const ScatteringTable* table,
         const ScatteringEntry* entry = &table->entries[e];
 
         // Get peak density at r=0
-        Ipp64f rho0 = atom_density_at_r(entry, 0.0, sigma_res);
+        Ipp64f rho0 = atom_density_at_r(entry, 0.0, resolution, criterion);
 
         // Binary search for r where density = cutoff_level * rho0
         // Start with reasonable upper bound
@@ -329,7 +354,7 @@ int Scattering::precompute_profiles(const ScatteringTable* table,
 
         for (int iter = 0; iter < 50; iter++) {
             Ipp64f r_mid = (r_low + r_high) / 2.0;
-            Ipp64f rho = atom_density_at_r(entry, r_mid, sigma_res);
+            Ipp64f rho = atom_density_at_r(entry, r_mid, resolution, criterion);
 
             if (rho / rho0 > cutoff_level) {
                 r_low = r_mid;
@@ -340,7 +365,7 @@ int Scattering::precompute_profiles(const ScatteringTable* table,
         }
 
         Ipp64f rmax = (r_low + r_high) / 2.0;
-        Ipp64f rho_at_rmax = atom_density_at_r(entry, rmax, sigma_res);
+        Ipp64f rho_at_rmax = atom_density_at_r(entry, rmax, resolution, criterion);
 
         printf("%-4d %-4s %-12.4f %-12.6f %-12.8f %-12.8f\n",
             entry->atomic_number, entry->name,
@@ -388,7 +413,7 @@ int Scattering::precompute_profiles(const ScatteringTable* table,
         // Fill profile
         for (int r = 0; r < PROFILE_POINTS; r++) {
             Ipp64f dist = r * profile_step;
-            Ipp64f rho = atom_density_at_r(&table->entries[e], dist, sigma_res);
+            Ipp64f rho = atom_density_at_r(&table->entries[e], dist, resolution, criterion);
 
             // Apply amplitude scaling based on mode
             if (amplitude_mode == AMPLITUDE_ATOMIC_NUMBER) {

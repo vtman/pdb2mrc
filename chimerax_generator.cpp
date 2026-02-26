@@ -172,7 +172,8 @@ int ChimeraXGenerator::run() {
 
     printf("ChimeraX map generation:\n");
     printf("  Grid: %d x %d x %d (%lld voxels)\n", nx, ny, nz, nvox);
-    printf("  σ = %.3f Å, cutoff = %.1fσ\n", m_sigma, m_cutoff_range);
+    printf("  sigma = %.3f A, cutoff = %.1f sigma\n", m_sigma, m_cutoff_range);
+    printf("  B-factors: IGNORED\n");
     printf("  Atoms: %zu\n", m_weights.size());
 
     // Convert to float for processing (ChimeraX uses float)

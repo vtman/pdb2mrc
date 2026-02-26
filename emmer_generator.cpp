@@ -832,141 +832,7 @@ void EmmerGenerator::applyOutputAlignment() {
         return;
     }
 
-
     return;
-
-    int64_t nvox = (int64_t)m_nx * m_ny * m_nz;
-
-    // Create temporary grid for the transformed map
-    Ipp64f* temp = ippsMalloc_64f(nvox);
-    if (!temp) return;
-
-    // Step 1: Flip along z-axis
-    for (int k = 0; k < m_nz; k++) {
-        int k_flip = m_nz - 1 - k;
-        for (int j = 0; j < m_ny; j++) {
-            for (int i = 0; i < m_nx; i++) {
-                int64_t src_idx = ((int64_t)k * m_ny + j) * m_nx + i;
-                int64_t dst_idx = ((int64_t)k_flip * m_ny + j) * m_nx + i;
-                temp[dst_idx] = m_output[src_idx];
-            }
-        }
-    }
-
-    // Step 2: Rotate 90 degrees around y-axis (axes=(2,0) in EMmer)
-    // New dimensions after rotation
-    int new_nx = m_nz;
-    int new_ny = m_ny;
-    int new_nz = m_nx;
-
-    int64_t new_nvox = (int64_t)new_nx * new_ny * new_nz;
-    Ipp64f* rotated = ippsMalloc_64f(new_nvox);
-    if (!rotated) {
-        ippsFree(temp);
-        return;
-    }
-
-    ippsZero_64f(rotated, new_nvox);
-
-    // Correct rotation mapping: (x, y, z) -> (-z, y, x)
-    for (int k = 0; k < m_nz; k++) {
-        for (int j = 0; j < m_ny; j++) {
-            for (int i = 0; i < m_nx; i++) {
-                int64_t src_idx = ((int64_t)k * m_ny + j) * m_nx + i;
-                if (temp[src_idx] == 0.0) continue;
-
-                int new_i = m_nz - 1 - k;        // x' = -z (wrapped)
-                int new_j = j;                     // y' = y
-                int new_k = i;                      // z' = x
-
-                if (new_i >= 0 && new_i < new_nx &&
-                    new_j >= 0 && new_j < new_ny &&
-                    new_k >= 0 && new_k < new_nz) {
-
-                    int64_t dst_idx = ((int64_t)new_k * new_ny + new_j) * new_nx + new_i;
-                    rotated[dst_idx] = temp[src_idx];
-                }
-            }
-        }
-    }
-
-    // Calculate center of mass of atoms
-    Ipp64f com_x = 0.0, com_y = 0.0, com_z = 0.0;
-    int n_atoms = 0;
-
-    for (int e = 0; e < m_nElements; e++) {
-        for (int a = 0; a < m_element_data[e].atom_count; a++) {
-            int atom_idx = m_element_data[e].atom_indices[a];
-            com_x += m_atoms[atom_idx].x;
-            com_y += m_atoms[atom_idx].y;
-            com_z += m_atoms[atom_idx].z;
-            n_atoms++;
-        }
-    }
-
-    if (n_atoms > 0) {
-        com_x /= n_atoms;
-        com_y /= n_atoms;
-        com_z /= n_atoms;
-    }
-
-    printf("\nOriginal center of mass: (%.3f, %.3f, %.3f)\n", com_x, com_y, com_z);
-
-    // Transform center of mass: (x, y, z) -> (-z, y, x)
-    Ipp64f new_com_x = -com_z;
-    Ipp64f new_com_y = com_y;
-    Ipp64f new_com_z = com_x;
-
-    printf("New center of mass should be: (%.3f, %.3f, %.3f)\n",
-        new_com_x, new_com_y, new_com_z);
-
-    // Free old output and replace with rotated map
-    ippsFree(m_output);
-    m_output = rotated;
-
-    // Update dimensions
-    int old_nx = m_nx;
-    int old_ny = m_ny;
-    int old_nz = m_nz;
-
-    m_nx = new_nx;
-    m_ny = new_ny;
-    m_nz = new_nz;
-
-    // Calculate grid center in voxel coordinates
-    Ipp64f grid_center_x = (m_nx - 1) * m_grid_spacing * 0.5;
-    Ipp64f grid_center_y = (m_ny - 1) * m_grid_spacing * 0.5;
-    Ipp64f grid_center_z = (m_nz - 1) * m_grid_spacing * 0.5;
-
-    // Set origin so that the transformed center of mass is at the grid center
-    m_origin[0] = new_com_x - grid_center_x;
-    m_origin[1] = new_com_y - grid_center_y;
-    m_origin[2] = new_com_z - grid_center_z;
-
-    // Shift to ensure all coordinates are non-negative if needed
-    Ipp64f min_allowed = 0.0;
-    Ipp64f shift_x = (m_origin[0] < min_allowed) ? -m_origin[0] : 0.0;
-    Ipp64f shift_y = (m_origin[1] < min_allowed) ? -m_origin[1] : 0.0;
-    Ipp64f shift_z = (m_origin[2] < min_allowed) ? -m_origin[2] : 0.0;
-
-    m_origin[0] += shift_x;
-    m_origin[1] += shift_y;
-    m_origin[2] += shift_z;
-
-    printf("Final origin: (%.3f, %.3f, %.3f)\n",
-        m_origin[0], m_origin[1], m_origin[2]);
-    printf("Final center of mass position: (%.3f, %.3f, %.3f)\n",
-        m_origin[0] + grid_center_x,
-        m_origin[1] + grid_center_y,
-        m_origin[2] + grid_center_z);
-    printf("Final box bounds X: [%.3f, %.3f]\n",
-        m_origin[0], m_origin[0] + (m_nx - 1) * m_grid_spacing);
-    printf("Final box bounds Y: [%.3f, %.3f]\n",
-        m_origin[1], m_origin[1] + (m_ny - 1) * m_grid_spacing);
-    printf("Final box bounds Z: [%.3f, %.3f]\n",
-        m_origin[2], m_origin[2] + (m_nz - 1) * m_grid_spacing);
-
-    ippsFree(temp);
 }
 
 //=============================================================================
@@ -1035,7 +901,11 @@ int EmmerGenerator::run() {
     printf("Resolution: %.2f A\n", m_d_min);
     printf("Grid spacing: %.2f A\n", m_grid_spacing);
     printf("Grid dimensions: %d x %d x %d (%lld voxels)\n", m_nx, m_ny, m_nz, nvox);
-    printf("Refmac blur: %.2f A^2\n", m_config.blur);
+    printf("B-factors: USING per-element averaged values");
+    if (m_config.set_refmac_blur) {
+        printf(" + Refmac blur (%.2f A^2)", m_config.blur);
+    }
+    printf("\n");
     printf("Atoms: %d\n", m_nAtoms);
     printf("Unique elements: %d\n", m_nElements);
 

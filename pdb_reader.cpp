@@ -179,6 +179,7 @@ int PDBReader::first_pass(const char* buffer, const PDBReaderConfig* config,
 }
 
 // Second pass: read atoms with element-based indexing
+// src/pdb_reader.cpp - Modified second_pass function
 int PDBReader::second_pass(const char* buffer, const PDBReaderConfig* config,
     Atom* atoms, int* element_starts, int* element_counts,
     int max_elements) {
@@ -215,6 +216,16 @@ int PDBReader::second_pass(const char* buffer, const PDBReaderConfig* config,
             }
 
             char resname[4] = { line[17], line[18], line[19], '\0' };
+
+            // ALWAYS filter water molecules - no option to disable
+            if (strcmp(resname, "HOH") == 0 || strcmp(resname, "WAT") == 0 ||
+                strcmp(resname, "H2O") == 0 || strcmp(resname, "TIP3") == 0 ||
+                strcmp(resname, "TIP4") == 0 || strncmp(resname, "TIP", 3) == 0) {
+                if (config->verbosity >= 2) {
+                    printf("Filtering water molecule: %s\n", resname);
+                }
+                continue;
+            }
 
             float b = parse_float(line, 60, 6);
             if (config->bfactor_cutoff > 0 && b > config->bfactor_cutoff) {

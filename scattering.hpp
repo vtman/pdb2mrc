@@ -3,7 +3,7 @@
 
 #include "types.hpp"
 #include "atom.hpp"
-#include "enums.hpp"  // Now includes enums instead of map_generator.hpp
+#include "enums.hpp"
 #include <math.h>
 
 #define MAX_ELEMENTS 98
@@ -40,7 +40,7 @@ private:
     static const ScatteringEntry PENG1996_NEUTRAL[];
     static int strieq(const char* a, const char* b);
     static Ipp64f atom_density_at_r(const ScatteringEntry* entry,
-        Ipp64f r, Ipp64f sigma_res);
+        Ipp64f r, Ipp64f resolution, ResolutionCriterion criterion);
 
 public:
     // Initialize Peng 1996 table with neutral atoms
@@ -52,9 +52,10 @@ public:
     // Precompute profiles for elements present in atoms at given resolution
     static int precompute_profiles(const ScatteringTable* table,
         Ipp64f resolution,
+        ResolutionCriterion criterion,
         Ipp64f grid_spacing,
         Ipp64f cutoff_level,
-        AmplitudeMode amplitude_mode,  // Now defined in enums.hpp
+        AmplitudeMode amplitude_mode,
         const Atom* atoms,
         int n_atoms,
         ElementProfile** profiles,
@@ -92,6 +93,7 @@ inline int scattering_get_index(const ScatteringTable* table, const char* elemen
     return Scattering::get_index(table, element);
 }
 
+// UPDATED: Backward compatibility wrapper with default criterion
 inline int scattering_precompute_profiles(const ScatteringTable* table,
     Ipp64f resolution,
     Ipp64f grid_spacing,
@@ -101,13 +103,11 @@ inline int scattering_precompute_profiles(const ScatteringTable* table,
     int n_atoms,
     ElementProfile** profiles,
     int* n_profiles) {
-    return Scattering::precompute_profiles(table, resolution, grid_spacing,
-        cutoff_level, amplitude_mode, atoms, n_atoms,
-        profiles, n_profiles);
-}
 
-inline void scattering_free_profiles(ElementProfile* profiles, int n_profiles) {
-    Scattering::free_profiles(profiles, n_profiles);
+    // Use Rayleigh criterion as default for backward compatibility
+    return Scattering::precompute_profiles(table, resolution, CRITERION_RAYLEIGH,
+        grid_spacing, cutoff_level, amplitude_mode,
+        atoms, n_atoms, profiles, n_profiles);
 }
 
 inline Ipp64f scattering_profile_at_r(const ElementProfile* profile, Ipp64f r) {

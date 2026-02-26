@@ -80,89 +80,73 @@ int SitusGenerator::computeBoundingBox(const Atom* atoms, int n_atoms,
 
 void SitusGenerator::computeKernelParams() {
     Ipp64f reso = m_config.resolution;
-    Ipp64f rh, sig;
+    Ipp64f rh, sig, rc;
+
+    // These factors come from Situs pdb2vol.c
+    const double TRIANGULAR_FACTOR = exp(log(2.0)) * sqrt(3.0 * (3.0 + 1.0) / (5.0 * (5.0 + 1.0)));
+    const double SEMI_EPAN_FACTOR = exp(log(2.0) / 1.5) * sqrt(3.0 * (3.0 + 1.5) / (5.0 * (5.0 + 1.5)));
+    const double EPAN_FACTOR = exp(log(2.0) / 2.0) * sqrt(3.0 * (3.0 + 2.0) / (5.0 * (5.0 + 2.0)));
+    const double HARD_SPHERE_FACTOR = exp(log(2.0) / 60.0) * sqrt(3.0 * (3.0 + 60.0) / (5.0 * (5.0 + 60.0)));
 
     if (reso < 0.0) {
-        // Negative value: target resolution R = 2σ
+        // 2σ mode: input = -R, where R = 2σ
         sig = -reso / 2.0;
 
-        // Compute half-max radius for each kernel type based on sigma
         switch (m_config.kernel_type) {
         case SITUS_KERNEL_GAUSSIAN:
-            // Gaussian: r_h = σ * sqrt(ln(2)/1.5)
-            rh = sig * sqrt(log(2.0) / 1.5);
+            rh = sig * sqrt(log(2.0)) / sqrt(1.5);
+            rc = sqrt(3.0) * sig;
             break;
         case SITUS_KERNEL_TRIANGULAR:
-            // Triangular: r_h = σ / (2^(1/1) * sqrt(3*4/(5*6)))
-            rh = sig / (exp(log(2.0)) * sqrt(12.0 / 30.0));
+            rh = sig / TRIANGULAR_FACTOR;
+            rc = 2.0 * rh;  // exp(ln2) * rh = 2*rh
             break;
         case SITUS_KERNEL_SEMI_EPANECHNIKOV:
-            // Semi-Epanechnikov: r_h = σ / (2^(1/1.5) * sqrt(3*4.5/(5*6.5)))
-            rh = sig / (exp(log(2.0) / 1.5) * sqrt(13.5 / 32.5));
+            rh = sig / SEMI_EPAN_FACTOR;
+            rc = exp(log(2.0) / 1.5) * rh;  // 2^(1/1.5) * rh
             break;
         case SITUS_KERNEL_EPANECHNIKOV:
-            // Epanechnikov: r_h = σ / (2^(1/2) * sqrt(3*5/(5*7)))
-            rh = sig / (exp(log(2.0) / 2.0) * sqrt(15.0 / 35.0));
+            rh = sig / EPAN_FACTOR;
+            rc = exp(log(2.0) / 2.0) * rh;  // sqrt(2) * rh
             break;
         case SITUS_KERNEL_HARD_SPHERE:
-            // Hard Sphere: r_h = σ / (2^(1/60) * sqrt(3*63/(5*65)))
-            rh = sig / (exp(log(2.0) / 60.0) * sqrt(189.0 / 325.0));
+            rh = sig / HARD_SPHERE_FACTOR;
+            rc = exp(log(2.0) / 60.0) * rh;  // 2^(1/60) * rh
             break;
         default:
-            rh = sig * sqrt(log(2.0) / 1.5);
+            rh = sig * sqrt(log(2.0)) / sqrt(1.5);
+            rc = sqrt(3.0) * sig;
         }
     }
     else {
-        // Positive value: direct half-max radius
+        // Half-max radius mode
         rh = reso;
 
-        // Compute sigma for each kernel type based on half-max radius
         switch (m_config.kernel_type) {
         case SITUS_KERNEL_GAUSSIAN:
-            // Gaussian: σ = r_h * sqrt(1.5/ln(2))
-            sig = rh * sqrt(1.5 / log(2.0));
+            sig = rh * sqrt(1.5) / sqrt(log(2.0));
+            rc = sqrt(3.0) * sig;
             break;
         case SITUS_KERNEL_TRIANGULAR:
-            // Triangular: σ = r_h * 2^(1/1) * sqrt(3*4/(5*6))
-            sig = rh * exp(log(2.0)) * sqrt(12.0 / 30.0);
+            sig = rh * TRIANGULAR_FACTOR;
+            rc = 2.0 * rh;
             break;
         case SITUS_KERNEL_SEMI_EPANECHNIKOV:
-            // Semi-Epanechnikov: σ = r_h * 2^(1/1.5) * sqrt(3*4.5/(5*6.5))
-            sig = rh * exp(log(2.0) / 1.5) * sqrt(13.5 / 32.5);
+            sig = rh * SEMI_EPAN_FACTOR;
+            rc = exp(log(2.0) / 1.5) * rh;
             break;
         case SITUS_KERNEL_EPANECHNIKOV:
-            // Epanechnikov: σ = r_h * 2^(1/2) * sqrt(3*5/(5*7))
-            sig = rh * exp(log(2.0) / 2.0) * sqrt(15.0 / 35.0);
+            sig = rh * EPAN_FACTOR;
+            rc = exp(log(2.0) / 2.0) * rh;
             break;
         case SITUS_KERNEL_HARD_SPHERE:
-            // Hard Sphere: σ = r_h * 2^(1/60) * sqrt(3*63/(5*65))
-            sig = rh * exp(log(2.0) / 60.0) * sqrt(189.0 / 325.0);
+            sig = rh * HARD_SPHERE_FACTOR;
+            rc = exp(log(2.0) / 60.0) * rh;
             break;
         default:
-            sig = rh * sqrt(1.5 / log(2.0));
+            sig = rh * sqrt(1.5) / sqrt(log(2.0));
+            rc = sqrt(3.0) * sig;
         }
-    }
-
-    // Compute cutoff radius for each kernel type
-    Ipp64f rc;
-    switch (m_config.kernel_type) {
-    case SITUS_KERNEL_GAUSSIAN:
-        rc = sqrt(3.0) * sig;
-        break;
-    case SITUS_KERNEL_TRIANGULAR:
-        rc = exp(log(2.0)) * rh;
-        break;
-    case SITUS_KERNEL_SEMI_EPANECHNIKOV:
-        rc = exp(log(2.0) / 1.5) * rh;
-        break;
-    case SITUS_KERNEL_EPANECHNIKOV:
-        rc = exp(log(2.0) / 2.0) * rh;
-        break;
-    case SITUS_KERNEL_HARD_SPHERE:
-        rc = exp(log(2.0) / 60.0) * rh;
-        break;
-    default:
-        rc = sqrt(3.0) * sig;
     }
 
     m_kernel_params.sigma = sig;
@@ -173,8 +157,8 @@ void SitusGenerator::computeKernelParams() {
 void SitusGenerator::generateGaussianKernel(Ipp64f* kernel, int extent, Ipp64f sigma, Ipp64f amplitude) {
     int half = extent / 2;
     Ipp64f sigma_sq = sigma * sigma;
-    Ipp64f bvalue = -1.0 / (2.0 * sigma_sq);
-    Ipp64f cvalue = 9.0 * sigma_sq;  // (3σ)^2
+    Ipp64f bvalue = -1.5 / sigma_sq;  // Situs uses exp(-1.5 r²/σ²)
+    Ipp64f cvalue = 9.0 * sigma_sq;   // (3σ)^2 cutoff
 
     for (int k = 0; k < extent; k++) {
         int dk = k - half;
@@ -185,8 +169,8 @@ void SitusGenerator::generateGaussianKernel(Ipp64f* kernel, int extent, Ipp64f s
             for (int i = 0; i < extent; i++) {
                 int di = i - half;
                 Ipp64f dsq = (Ipp64f)(di * di) + dj_sq + dk_sq;
-                if (dsq < cvalue) {
-                    kernel[kernelIdx(i, j, k)] = amplitude * exp(dsq * bvalue);
+                if (dsq * m_grid_spacing * m_grid_spacing < cvalue) {
+                    kernel[kernelIdx(i, j, k)] = amplitude * exp(dsq * bvalue * m_grid_spacing * m_grid_spacing);
                 }
                 else {
                     kernel[kernelIdx(i, j, k)] = 0.0;
@@ -276,23 +260,25 @@ int SitusGenerator::generateKernel() {
     computeKernelParams();
 
     // Calculate target variance in voxel units
-    Ipp64f kmsd = (m_kernel_params.sigma * m_kernel_params.sigma) / (m_grid_spacing * m_grid_spacing);
+    Ipp64f kmsd = (m_kernel_params.sigma * m_kernel_params.sigma) /
+        (m_grid_spacing * m_grid_spacing);
 
     // Apply lattice correction if requested
     Ipp64f varmap = kmsd;
+    Ipp64f sigma_corrected = m_kernel_params.sigma;
+
     if (m_config.apply_lattice_correction) {
         varmap -= m_lattice_variance;
         if (varmap < 0.0) {
             fprintf(stderr, "Error: Lattice variance exceeds target variance. Increase grid spacing or reduce resolution.\n");
             return -1;
         }
+        sigma_corrected = sqrt(varmap) * m_grid_spacing;
     }
 
     // Determine kernel extent based on cutoff radius
-    Ipp64f sigma_corrected = sqrt(varmap) * m_grid_spacing;
-
-    // For Gaussian, use 3σ cutoff
     if (m_config.kernel_type == SITUS_KERNEL_GAUSSIAN) {
+        // For Gaussian, use 3σ cutoff with corrected sigma
         m_kernel_extent = 2 * (int)ceil(3.0 * sigma_corrected / m_grid_spacing) + 1;
     }
     else {
@@ -334,69 +320,6 @@ int SitusGenerator::generateKernel() {
     return 0;
 }
 
-
-
-//=============================================================================
-// Public methods
-//=============================================================================
-
-int SitusGenerator::init(const SitusGeneratorConfig* config, const Atom* atoms, int n_atoms) {
-    if (!config || !atoms || n_atoms <= 0) return -1;
-
-    m_config = *config;
-    m_atoms = atoms;
-    m_nAtoms = n_atoms;
-    m_grid_spacing = m_config.grid_spacing;
-
-    // Compute bounding box of atoms
-    Ipp64f xmin, xmax, ymin, ymax, zmin, zmax;
-    int ret = computeBoundingBox(atoms, n_atoms, xmin, xmax, ymin, ymax, zmin, zmax);
-    if (ret != 0) return -2;
-
-    // Align to grid - this is correct
-    xmin = m_grid_spacing * floor(xmin / m_grid_spacing);
-    xmax = m_grid_spacing * ceil(xmax / m_grid_spacing);
-    ymin = m_grid_spacing * floor(ymin / m_grid_spacing);
-    ymax = m_grid_spacing * ceil(ymax / m_grid_spacing);
-    zmin = m_grid_spacing * floor(zmin / m_grid_spacing);
-    zmax = m_grid_spacing * ceil(zmax / m_grid_spacing);
-
-    // Calculate base dimensions without margin
-    int base_nx = (int)ceil((xmax - xmin) / m_grid_spacing) + 1;
-    int base_ny = (int)ceil((ymax - ymin) / m_grid_spacing) + 1;
-    int base_nz = (int)ceil((zmax - zmin) / m_grid_spacing) + 1;
-
-    // Add margin voxels to dimensions
-    m_lattice_nx = base_nx + 2 * m_config.margin_voxels;
-    m_lattice_ny = base_ny + 2 * m_config.margin_voxels;
-    m_lattice_nz = base_nz + 2 * m_config.margin_voxels;
-
-    // Lattice origin should be shifted by margin voxels
-    // This ensures the original bounding box is centered in the lattice
-    m_lattice_origin[0] = xmin - m_config.margin_voxels * m_grid_spacing;
-    m_lattice_origin[1] = ymin - m_config.margin_voxels * m_grid_spacing;
-    m_lattice_origin[2] = zmin - m_config.margin_voxels * m_grid_spacing;
-
-    if (m_config.verbosity >= 1) {
-        printf("Situs init:\n");
-        printf("  Atom bounding box: (%.2f-%.2f, %.2f-%.2f, %.2f-%.2f)\n",
-            xmin, xmax, ymin, ymax, zmin, zmax);
-        printf("  Base dimensions: %d x %d x %d\n", base_nx, base_ny, base_nz);
-        printf("  Lattice dimensions: %d x %d x %d (with %d margin voxels)\n",
-            m_lattice_nx, m_lattice_ny, m_lattice_nz, m_config.margin_voxels);
-        printf("  Lattice origin: (%.2f, %.2f, %.2f)\n",
-            m_lattice_origin[0], m_lattice_origin[1], m_lattice_origin[2]);
-    }
-
-    // Allocate lattice
-    int64_t nvox_lattice = (int64_t)m_lattice_nx * m_lattice_ny * m_lattice_nz;
-    m_lattice = (Ipp64f*)ippsMalloc_64f(nvox_lattice);
-    if (!m_lattice) return -3;
-
-    return 0;
-}
-
-// Fix projectAtomsToLattice() - the coordinate transformation
 int SitusGenerator::projectAtomsToLattice() {
     if (!m_atoms || m_nAtoms <= 0) return -1;
     if (!m_lattice) return -2;
@@ -407,6 +330,7 @@ int SitusGenerator::projectAtomsToLattice() {
 
     m_lattice_variance = 0.0;
     m_total_mass = 0.0;
+    double variance_sum = 0.0;
 
     Ipp64f inv_spacing = 1.0 / m_grid_spacing;
 
@@ -424,8 +348,6 @@ int SitusGenerator::projectAtomsToLattice() {
         }
 
         // Position in grid coordinates relative to lattice origin
-        // This is correct - we don't add margin_voxels here because
-        // the lattice origin already accounts for the margin
         Ipp64f gx = (m_atoms[i].x - m_lattice_origin[0]) * inv_spacing;
         Ipp64f gy = (m_atoms[i].y - m_lattice_origin[1]) * inv_spacing;
         Ipp64f gz = (m_atoms[i].z - m_lattice_origin[2]) * inv_spacing;
@@ -435,8 +357,8 @@ int SitusGenerator::projectAtomsToLattice() {
             gy < 0 || gy >= m_lattice_ny - 1 ||
             gz < 0 || gz >= m_lattice_nz - 1) {
             if (m_config.verbosity >= 2) {
-                printf("Warning: Atom %d at (%.2f,%.2f,%.2f) outside lattice (g=%.2f,%.2f,%.2f)\n",
-                    i, m_atoms[i].x, m_atoms[i].y, m_atoms[i].z, gx, gy, gz);
+                printf("Warning: Atom %d at (%.2f,%.2f,%.2f) outside lattice\n",
+                    i, m_atoms[i].x, m_atoms[i].y, m_atoms[i].z);
             }
             continue;
         }
@@ -449,12 +371,12 @@ int SitusGenerator::projectAtomsToLattice() {
         int iy1 = iy0 + 1;
         int iz1 = iz0 + 1;
 
-        // Fractional parts (weights from left/front/bottom)
+        // Fractional parts
         Ipp64f fx = gx - ix0;
         Ipp64f fy = gy - iy0;
         Ipp64f fz = gz - iz0;
 
-        // Trilinear contributions to 8 surrounding voxels
+        // Trilinear weights
         Ipp64f w000 = (1.0 - fx) * (1.0 - fy) * (1.0 - fz);
         Ipp64f w100 = fx * (1.0 - fy) * (1.0 - fz);
         Ipp64f w010 = (1.0 - fx) * fy * (1.0 - fz);
@@ -464,6 +386,7 @@ int SitusGenerator::projectAtomsToLattice() {
         Ipp64f w011 = (1.0 - fx) * fy * fz;
         Ipp64f w111 = fx * fy * fz;
 
+        // Add to lattice
         m_lattice[latticeIdx(ix0, iy0, iz0)] += weight * w000;
         m_lattice[latticeIdx(ix1, iy0, iz0)] += weight * w100;
         m_lattice[latticeIdx(ix0, iy1, iz0)] += weight * w010;
@@ -473,16 +396,33 @@ int SitusGenerator::projectAtomsToLattice() {
         m_lattice[latticeIdx(ix0, iy1, iz1)] += weight * w011;
         m_lattice[latticeIdx(ix1, iy1, iz1)] += weight * w111;
 
+        // Calculate variance contribution (following Situs formula)
+        // For each corner, add weight * weight_factor * ((1-a)² + (1-b)² + (1-c)²)
+        variance_sum += weight * w000 * ((1.0 - fx) * (1.0 - fx) + (1.0 - fy) * (1.0 - fy) + (1.0 - fz) * (1.0 - fz));
+        variance_sum += weight * w100 * (fx * fx + (1.0 - fy) * (1.0 - fy) + (1.0 - fz) * (1.0 - fz));
+        variance_sum += weight * w010 * ((1.0 - fx) * (1.0 - fx) + fy * fy + (1.0 - fz) * (1.0 - fz));
+        variance_sum += weight * w110 * (fx * fx + fy * fy + (1.0 - fz) * (1.0 - fz));
+        variance_sum += weight * w001 * ((1.0 - fx) * (1.0 - fx) + (1.0 - fy) * (1.0 - fy) + fz * fz);
+        variance_sum += weight * w101 * (fx * fx + (1.0 - fy) * (1.0 - fy) + fz * fz);
+        variance_sum += weight * w011 * ((1.0 - fx) * (1.0 - fx) + fy * fy + fz * fz);
+        variance_sum += weight * w111 * (fx * fx + fy * fy + fz * fz);
+
         m_total_mass += weight;
     }
 
-    // For variance calculation (simplified - you may want to implement properly)
-    m_lattice_variance = 0.0;  // You can calculate this properly if needed
+    // Calculate final variance (sigma_atom^2)
+    if (m_total_mass > 0) {
+        m_lattice_variance = variance_sum / m_total_mass;
+    }
+
+    if (m_config.verbosity >= 1) {
+        printf("Lattice smoothing (sigma = atom rmsd): %6.3f Angstrom\n",
+            m_grid_spacing * sqrt(m_lattice_variance));
+    }
 
     return 0;
 }
 
-// Fix convolveWithKernel() - output origin calculation
 int SitusGenerator::convolveWithKernel() {
     int half_kernel = m_kernel_extent / 2;
 
@@ -492,7 +432,6 @@ int SitusGenerator::convolveWithKernel() {
     m_nz = m_lattice_nz + m_kernel_extent - 1;
 
     // Output origin should be lattice origin shifted by half kernel
-    // This is correct because convolution spreads the lattice
     m_origin[0] = m_lattice_origin[0] - half_kernel * m_grid_spacing;
     m_origin[1] = m_lattice_origin[1] - half_kernel * m_grid_spacing;
     m_origin[2] = m_lattice_origin[2] - half_kernel * m_grid_spacing;
@@ -546,6 +485,65 @@ int SitusGenerator::convolveWithKernel() {
     return 0;
 }
 
+//=============================================================================
+// Public methods
+//=============================================================================
+
+int SitusGenerator::init(const SitusGeneratorConfig* config, const Atom* atoms, int n_atoms) {
+    if (!config || !atoms || n_atoms <= 0) return -1;
+
+    m_config = *config;
+    m_atoms = atoms;
+    m_nAtoms = n_atoms;
+    m_grid_spacing = m_config.grid_spacing;
+
+    // Compute bounding box of atoms
+    Ipp64f xmin, xmax, ymin, ymax, zmin, zmax;
+    int ret = computeBoundingBox(atoms, n_atoms, xmin, xmax, ymin, ymax, zmin, zmax);
+    if (ret != 0) return -2;
+
+    // Align to grid
+    xmin = m_grid_spacing * floor(xmin / m_grid_spacing);
+    xmax = m_grid_spacing * ceil(xmax / m_grid_spacing);
+    ymin = m_grid_spacing * floor(ymin / m_grid_spacing);
+    ymax = m_grid_spacing * ceil(ymax / m_grid_spacing);
+    zmin = m_grid_spacing * floor(zmin / m_grid_spacing);
+    zmax = m_grid_spacing * ceil(zmax / m_grid_spacing);
+
+    // Calculate base dimensions without margin
+    int base_nx = (int)ceil((xmax - xmin) / m_grid_spacing) + 1;
+    int base_ny = (int)ceil((ymax - ymin) / m_grid_spacing) + 1;
+    int base_nz = (int)ceil((zmax - zmin) / m_grid_spacing) + 1;
+
+    // Add margin voxels to dimensions
+    m_lattice_nx = base_nx + 2 * m_config.margin_voxels;
+    m_lattice_ny = base_ny + 2 * m_config.margin_voxels;
+    m_lattice_nz = base_nz + 2 * m_config.margin_voxels;
+
+    // Lattice origin shifted by margin voxels
+    m_lattice_origin[0] = xmin - m_config.margin_voxels * m_grid_spacing;
+    m_lattice_origin[1] = ymin - m_config.margin_voxels * m_grid_spacing;
+    m_lattice_origin[2] = zmin - m_config.margin_voxels * m_grid_spacing;
+
+    if (m_config.verbosity >= 1) {
+        printf("Situs init:\n");
+        printf("  Atom bounding box: (%.2f-%.2f, %.2f-%.2f, %.2f-%.2f)\n",
+            xmin, xmax, ymin, ymax, zmin, zmax);
+        printf("  Base dimensions: %d x %d x %d\n", base_nx, base_ny, base_nz);
+        printf("  Lattice dimensions: %d x %d x %d (with %d margin voxels)\n",
+            m_lattice_nx, m_lattice_ny, m_lattice_nz, m_config.margin_voxels);
+        printf("  Lattice origin: (%.2f, %.2f, %.2f)\n",
+            m_lattice_origin[0], m_lattice_origin[1], m_lattice_origin[2]);
+    }
+
+    // Allocate lattice
+    int64_t nvox_lattice = (int64_t)m_lattice_nx * m_lattice_ny * m_lattice_nz;
+    m_lattice = (Ipp64f*)ippsMalloc_64f(nvox_lattice);
+    if (!m_lattice) return -3;
+
+    return 0;
+}
+
 int SitusGenerator::run() {
     if (!m_lattice) return -1;
 
@@ -553,8 +551,9 @@ int SitusGenerator::run() {
     printf("Kernel type: %d\n", m_config.kernel_type);
     printf("Resolution input: %.2f %s\n",
         fabs(m_config.resolution),
-        (m_config.resolution < 0) ? "(2σ mode)" : "(half-max radius mode)");
+        (m_config.resolution < 0) ? "(2sigma mode)" : "(half-max radius mode)");
     printf("Grid spacing: %.2f A\n", m_grid_spacing);
+    printf("B-factors: IGNORED (Situs uses mass/unit weighting only)\n");
     printf("Margin voxels: %d\n", m_config.margin_voxels);
     printf("Mass weighting: %s\n", m_config.use_mass_weighting ? "on" : "off");
     printf("Lattice correction: %s\n", m_config.apply_lattice_correction ? "on" : "off");
@@ -590,7 +589,7 @@ int SitusGenerator::run() {
     printf("\nOutput map:\n");
     printf("  Dimensions: %d x %d x %d\n", m_nx, m_ny, m_nz);
     printf("  Origin: (%.2f, %.2f, %.2f)\n", m_origin[0], m_origin[1], m_origin[2]);
-    printf("  Effective resolution (2σ): %.3f A\n", eff_resolution);
+    printf("  Effective resolution (2sigma): %.3f A\n", eff_resolution);
     if (m_config.apply_lattice_correction) {
         printf("  (corrected for lattice smoothing)\n");
     }

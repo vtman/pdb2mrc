@@ -1,5 +1,6 @@
 // src/main_controller.cpp
 #include "main_controller.hpp"
+#include "bfactor_utils.hpp"
 #include "enums.hpp"
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,7 +31,6 @@ CommandLineConfig::CommandLineConfig() {
     map_params.grid_spacing = 0.0;
     map_params.padding = 3.0;
     map_params.cutoff_level = 0.001;
-    map_params.cutoff_range = 5.0;      // ChimeraX default
     map_params.use_bfactors = 0;
     map_params.b_default = 20.0;
 
@@ -41,7 +41,7 @@ CommandLineConfig::CommandLineConfig() {
     pdb_config.verbosity = 1;
 
     // Initialize other parameters
-    cutoff_range = 5.0f;
+    cutoff_range = 5.0f;  // For ChimeraX only
     threads = 0;
     verbose = 1;
     no_normalize = 0;
@@ -61,8 +61,8 @@ void CommandLineConfig::print_usage(const char* progname) {
     printf("  --method STR   Generation method: peng1996 (default), chimerax, situs, emmer\n\n");
 
     printf("Common Options:\n");
-    printf("  -r FLOAT   Resolution in A (default: 6.0)\n");
-    printf("  -c STR     Criterion: rayleigh (default), chimerax, eman2, fsc0143, fsc05\n");
+    printf("  -r FLOAT   Target resolution in A (default: 6.0)\n");
+    printf("  -c STR     Resolution criterion: rayleigh (default), chimerax, eman2\n");
     printf("  -s FLOAT   Voxel size in A (default: auto = r/3)\n");
     printf("  -p FLOAT   Padding around atoms in A (default: 3.0)\n");
     printf("  -t INT     Number of OpenMP threads (0 = auto, default: 0)\n");
@@ -72,12 +72,12 @@ void CommandLineConfig::print_usage(const char* progname) {
 
     printf("Peng1996/AtomicNumber Options:\n");
     printf("  -a STR     Amplitude mode: peng1996 (default), atomic-number\n");
-    printf("  --no-bfac  Ignore B-factors from PDB\n");
-    printf("  -b FLOAT   B-factor cutoff (exclude atoms with B > cutoff)\n\n");
+    printf("  --use-bfac Apply B-factors from PDB (default: off)\n");
+    printf("  --b-default FLOAT Default B-factor if not in PDB (default: 20.0)\n");
+    printf("  --bfactor-cutoff FLOAT   Exclude atoms with B > cutoff\n\n");
 
     printf("ChimeraX-Specific Options:\n");
     printf("  --cutoff FLOAT   Cutoff range in sigma (default: 5.0)\n");
-    printf("  --no-norm        Skip final normalization\n\n");
 
     printf("Situs-Specific Options:\n");
     printf("  --situs-kernel NUM    Kernel type (1-5):\n");
@@ -112,7 +112,8 @@ void CommandLineConfig::print_usage(const char* progname) {
     printf("Filtering Options (all methods):\n");
     printf("  --filter-h       Filter hydrogen atoms (default: on)\n");
     printf("  --no-filter-h    Keep hydrogen atoms\n");
-    printf("  --filter-w       Filter water molecules\n\n");
+    printf("  --bfactor-cutoff FLOAT   Exclude atoms with B > cutoff\n\n");
+    printf("Note: Water molecules (HOH, WAT, H2O, TIP) are ALWAYS filtered out.\n\n");
 
     printf("Examples:\n");
     printf("  # Default Peng1996 mode\n");
@@ -128,9 +129,9 @@ void CommandLineConfig::print_usage(const char* progname) {
 static ResolutionCriterion parse_criterion(const char* s) {
     if (strcmp(s, "chimerax") == 0) return CRITERION_CHIMERAX;
     if (strcmp(s, "eman2") == 0) return CRITERION_EMAN2;
-    if (strcmp(s, "fsc0143") == 0) return CRITERION_FSC_0143;
-    if (strcmp(s, "fsc05") == 0) return CRITERION_FSC_05;
     if (strcmp(s, "rayleigh") == 0) return CRITERION_RAYLEIGH;
+    // Default to Rayleigh if unknown
+    fprintf(stderr, "Warning: Unknown criterion '%s', using Rayleigh\n", s);
     return CRITERION_RAYLEIGH;
 }
 
@@ -141,8 +142,6 @@ static AmplitudeMode parse_amplitude_mode(const char* s) {
     if (strcmp(s, "peng1996") == 0) return AMPLITUDE_PENG1996;
     return AMPLITUDE_PENG1996;
 }
-
-
 
 int CommandLineConfig::parse(int argc, char** argv) {
     // Default method
@@ -182,8 +181,8 @@ int CommandLineConfig::parse(int argc, char** argv) {
         else if (strcmp(argv[i], "-r") == 0 && i + 1 < argc) {
             map_params.resolution = atof(argv[++i]);
             situs_config.resolution = map_params.resolution;
-            if (map_params.resolution == 0) {
-                fprintf(stderr, "Error: Resolution must be non-zero\n");
+            if (map_params.resolution <= 0) {
+                fprintf(stderr, "Error: Resolution must be positive\n");
                 return -1;
             }
         }
@@ -206,17 +205,16 @@ int CommandLineConfig::parse(int argc, char** argv) {
         }
         else if (strcmp(argv[i], "--cutoff") == 0 && i + 1 < argc) {
             cutoff_range = (float)atof(argv[++i]);
-            map_params.cutoff_range = cutoff_range;
             if (cutoff_range <= 0) {
                 fprintf(stderr, "Error: Cutoff range must be positive\n");
                 return -1;
             }
         }
-        else if (strcmp(argv[i], "--no-bfac") == 0) {
-            map_params.use_bfactors = 0;
+        else if (strcmp(argv[i], "--use-bfac") == 0) {
+            map_params.use_bfactors = 1;
         }
-        else if (strcmp(argv[i], "--no-norm") == 0) {
-            no_normalize = 1;
+        else if (strcmp(argv[i], "--b-default") == 0 && i + 1 < argc) {
+            map_params.b_default = atof(argv[++i]);
         }
         else if (strcmp(argv[i], "--filter-h") == 0) {
             pdb_config.filter_hydrogen = 1;
@@ -224,10 +222,11 @@ int CommandLineConfig::parse(int argc, char** argv) {
         else if (strcmp(argv[i], "--no-filter-h") == 0) {
             pdb_config.filter_hydrogen = 0;
         }
-        else if (strcmp(argv[i], "--filter-w") == 0) {
-            filter_water = 1;
+        else if (strcmp(argv[i], "--bfactor-cutoff") == 0 && i + 1 < argc) {
+            pdb_config.bfactor_cutoff = (float)atof(argv[++i]);
         }
         else if (strcmp(argv[i], "-b") == 0 && i + 1 < argc) {
+            // For backward compatibility
             pdb_config.bfactor_cutoff = (float)atof(argv[++i]);
         }
         else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
@@ -237,10 +236,12 @@ int CommandLineConfig::parse(int argc, char** argv) {
         else if (strcmp(argv[i], "-v") == 0) {
             verbose = 2;
             pdb_config.verbosity = 2;
+            situs_config.verbosity = 2;
         }
         else if (strcmp(argv[i], "-q") == 0) {
             verbose = 0;
             pdb_config.verbosity = 0;
+            situs_config.verbosity = 0;
         }
 
         // Situs-specific options
@@ -376,10 +377,17 @@ int CommandLineConfig::parse(int argc, char** argv) {
         printf("Input file: %s\n", input_file);
         printf("Output file: %s\n", output_file);
         printf("Resolution: %.2f A\n", map_params.resolution);
+        printf("Criterion: %s\n", criterion_name(map_params.criterion));
+        printf("Amplitude mode: %s\n", amplitude_mode_name(map_params.amplitude_mode));
         printf("Grid spacing: %.2f A\n", map_params.grid_spacing);
         printf("Padding: %.2f A\n", map_params.padding);
+        printf("Use B-factors: %s\n", map_params.use_bfactors ? "yes" : "no");
         printf("Filter hydrogen: %s\n", pdb_config.filter_hydrogen ? "yes" : "no");
-        printf("Filter water: %s\n", filter_water ? "yes" : "no");
+
+        if (method == METHOD_CHIMERAX) {
+            printf("\nChimeraX-specific settings:\n");
+            printf("  Cutoff range: %.1f sigma\n", cutoff_range);
+        }
 
         if (method == METHOD_SITUS) {
             printf("\nSitus-specific settings:\n");
@@ -392,7 +400,7 @@ int CommandLineConfig::parse(int argc, char** argv) {
             case SITUS_KERNEL_HARD_SPHERE: printf("Hard Sphere\n"); break;
             }
             printf("  Resolution mode: %s (%.2f A)\n",
-                situs_config.resolution > 0 ? "half-max radius" : "2σ",
+                situs_config.resolution > 0 ? "half-max radius" : "2 sigma",
                 fabs(situs_config.resolution));
             printf("  Margin voxels: %d\n", situs_config.margin_voxels);
             printf("  Mass weighting: %s\n", situs_config.use_mass_weighting ? "on" : "off");
@@ -410,6 +418,23 @@ int CommandLineConfig::parse(int argc, char** argv) {
             printf("  Cutoff level: %.2e\n", emmer_config.cutoff_level);
             printf("  Shannon rate: %.2f\n", emmer_config.rate);
         }
+
+        // B-factor usage message by method
+        if (method == METHOD_EMMER) {
+            printf("B-factors: WILL BE USED (averaged per element)\n");
+            if (emmer_config.set_refmac_blur) {
+                printf("  + Refmac blur: enabled");
+                if (emmer_config.blur > 0)
+                    printf(" (manual: %.2f A^2)", emmer_config.blur);
+                printf("\n");
+            }
+        }
+        else {
+            printf("B-factors: IGNORED (only EMmer method uses B-factors)\n");
+        }
+
+        printf("Filter water: ALWAYS (HOH, WAT, H2O, TIP removed)\n");
+
         printf("====================\n\n");
     }
 
@@ -427,7 +452,7 @@ PDB2MRCApp::PDB2MRCApp() {
     m_generator = nullptr;
     m_chimerax_generator = nullptr;
     m_situs_generator = nullptr;
-    m_emmer_generator = nullptr;  // THIS WAS MISSING!
+    m_emmer_generator = nullptr;
     nx = ny = nz = 0;
     m_origin[0] = m_origin[1] = m_origin[2] = 0.0;
 
@@ -492,23 +517,22 @@ int PDB2MRCApp::read_pdb_file() {
         return -3;
     }
 
-    // Filter water if requested
-    if (m_config.filter_water) {
-        int n_keep = 0;
-        for (int i = 0; i < nAtoms; i++) {
-            if (strcmp(m_atoms[i].resname, "HOH") != 0 &&
-                strcmp(m_atoms[i].resname, "WAT") != 0) {
-                if (i != n_keep) {
-                    m_atoms[n_keep] = m_atoms[i];
-                }
-                n_keep++;
-            }
-        }
-        if (m_config.verbose >= 1) {
-            printf("Filtered %d water molecules, kept %d atoms\n",
-                nAtoms - n_keep, n_keep);
-        }
-        nAtoms = n_keep;
+    // Add B-factor analysis for all methods
+    ElementBStats* elem_stats = NULL;
+    int n_elem_stats = 0;
+    GlobalBStats global_stats;
+
+    int ret_bf = BFactorAnalyzer::calculate_per_element_stats(m_atoms, nAtoms,
+        &elem_stats, &n_elem_stats);
+    if (ret_bf == 0 && elem_stats) {
+        BFactorAnalyzer::calculate_global_stats(m_atoms, nAtoms, &global_stats);
+
+        // Print B-factor statistics
+        BFactorAnalyzer::print_stats(elem_stats, n_elem_stats, &global_stats,
+            m_config.map_params.criterion,
+            m_config.method);
+
+        BFactorAnalyzer::free_stats(elem_stats);
     }
 
     return 0;
@@ -587,7 +611,6 @@ int PDB2MRCApp::initialize_generator() {
         }
     }
     else if (m_config.method == METHOD_SITUS) {
-        m_config.situs_config.verbosity = m_config.verbose;
         // Initialize Situs generator
         m_situs_generator = new SitusGenerator();
         if (!m_situs_generator) {
@@ -609,15 +632,12 @@ int PDB2MRCApp::initialize_generator() {
     }
     else if (m_config.method == METHOD_EMMER) {
         // Initialize EMmer generator
-        m_config.emmer_config.align_output = 0;
         m_emmer_generator = new EmmerGenerator();
         if (!m_emmer_generator) {
             fprintf(stderr, "Error: Failed to create EMmer generator\n");
             return -1;
         }
 
-        // For now, pass nullptr for cell_dimensions (auto-calculate from atoms)
-        // In the future, could extract unit cell from PDB if available
         int ret = m_emmer_generator->init(
             &m_config.emmer_config,
             m_atoms,
@@ -645,9 +665,6 @@ int PDB2MRCApp::initialize_generator() {
             fprintf(stderr, "Error: Failed to create map generator\n");
             return -1;
         }
-
-        // Pass the cutoff_range to map_params
-        m_config.map_params.cutoff_range = m_config.cutoff_range;
 
         int ret = m_generator->init(&m_config.map_params, m_atoms, nAtoms);
         if (ret != 0) {
@@ -682,9 +699,9 @@ int PDB2MRCApp::generate_map() {
             printf("  Criterion: %s\n", criterion_name(m_config.map_params.criterion));
             printf("  Grid spacing: %.2f A, Padding: %.2f A\n",
                 m_config.map_params.grid_spacing, m_config.map_params.padding);
-            printf("  σ = R/(π√2) = %.3f A\n",
+            printf("  sigma = R/(pi sqrt(2)) = %.3f A\n",
                 m_config.map_params.resolution / (M_PI * M_SQRT2));
-            printf("  Cutoff range: %.1fσ\n", m_config.cutoff_range);
+            printf("  Cutoff range: %.1f sigma\n", m_config.cutoff_range);
         }
 
         ret = m_chimerax_generator->run();
@@ -707,7 +724,7 @@ int PDB2MRCApp::generate_map() {
             printf("  Kernel type: %d\n", m_config.situs_config.kernel_type);
             printf("  Resolution: %.2f %s\n",
                 fabs(m_config.situs_config.resolution),
-                (m_config.situs_config.resolution < 0) ? "(2σ mode)" : "(half-max radius mode)");
+                (m_config.situs_config.resolution < 0) ? "(2sigma mode)" : "(half-max radius mode)");
             printf("  Grid spacing: %.2f A\n", m_config.situs_config.grid_spacing);
         }
 
@@ -767,6 +784,7 @@ int PDB2MRCApp::generate_map() {
             printf("  Amplitude mode: %s\n", amplitude_mode_name(m_config.map_params.amplitude_mode));
             printf("  Grid spacing: %.2f A, Padding: %.2f A\n",
                 m_config.map_params.grid_spacing, m_config.map_params.padding);
+            printf("  Use B-factors: %s\n", m_config.map_params.use_bfactors ? "yes" : "no");
         }
 
         ret = m_generator->run();
