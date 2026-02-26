@@ -67,132 +67,52 @@ Different software packages use slightly different criteria, all of which are im
 
 ### Default Method (Peng1996)
 
-The default map generation method in pdb2mrc treats density generation as a sequence of convolutions, each handling a different physical effect.
+The default map generation method in pdb2mrc treats density generation as a convolution of the atomic distribution with element-specific kernels derived from Peng1996 coefficients.
 
-#### B-factor Handling in Peng1996
+#### B-factor Handling
 
-**By default, B-factors are NOT applied.** The map is generated using only:
-- Element-specific scattering factors (from Peng1996 coefficients)
-- Resolution-dependent Gaussian blur (based on the chosen criterion)
+**B-factors are NOT applied in the default method.** The map is generated using only element-specific scattering factors (from Peng1996 coefficients) and resolution-dependent Gaussian blur (based on the chosen criterion).
 
-When the `--use-bfac` flag is enabled, the method uses **per-element averaged B-factors** rather than per-atom values. For each element type (e.g., all carbon atoms), the mean B-factor is calculated and applied uniformly to all atoms of that element:
+#### The Convolution Approach
 
-$$\sigma_{B,\text{element}}^2 = \frac{\langle B \rangle_{\text{element}}}{8\pi^2}$$
+The density map is generated through a two-step process:
 
-This averaged B-factor is then combined with the resolution blur in Fourier space:
-
-$$K_{\text{combined}}(s) = \left( \sum_{i=1}^{5} a_i \exp\left(-\frac{b_i s^2}{4\pi^2}\right) \right) \times \exp\left(-\frac{(\sigma_{\text{res}}^2 + \sigma_{B,\text{element}}^2) s^2}{2}\right)$$
-
-This approach maintains computational efficiency (one kernel per element type) while accounting for thermal motion when requested.
-
-#### The Convolution Chain
-
-The complete density map can be expressed as a series of convolutions applied to the ideal atomic distribution:
-
-$$\rho_{\text{final}} = \left( \sum_{\text{atoms}} \delta(r - r_n) \right) * K_{\text{element}} * G_{B_n} * G_{\text{res}}$$
+$$\rho_{\text{final}} = \left( \sum_{\text{atoms}} \delta(r - r_n) \right) * K_{\text{element}} * G_{\text{res}}$$
 
 where:
 - $\delta(r - r_n)$ is the ideal point source for atom $n$
 - $K_{\text{element}}$ is the element-specific 5-Gaussian kernel from Peng1996 (same for all atoms of a given element)
-- $G_{B_n}$ is the B-factor Gaussian for atom $n$ (varies per atom)
 - $G_{\text{res}}$ is the resolution Gaussian (same for all atoms)
 
-Since convolution is associative and commutative, we can group these operations to maximize computational efficiency. Our implementation uses a two-step approach that separates per-atom variations from element-specific and global operations.
+Since convolution is associative and commutative, we combine the element-specific kernel and resolution blur into a single combined kernel per element type, applied via FFT for efficiency.
 
-#### Step 1: Delta Function + B-factor Blurring (Combined)
+#### Step 1: Project Atoms to Grid (Trilinear Interpolation)
 
-Instead of treating the delta function and B-factor blurring as separate steps, we combine them into a single operation for each atom. For atom $n$ with B-factor $B_n$, its contribution to the map is:
+Atoms are projected onto the grid using **trilinear interpolation**. For atom $n$ at position $(x_n, y_n, z_n)$, its contribution to the eight surrounding grid points is distributed with weights based on the fractional distances:
 
-$$\rho_n(\mathbf{r}) = \delta(r - r_n) * G_{B_n}(\mathbf{r}) = \frac{1}{(2\pi\sigma_{B_n}^2)^{3/2}} \exp\left(-\frac{|r - r_n|^2}{2\sigma_{B_n}^2}\right)$$
+$$w_{ijk} = (1 - f_x)(1 - f_y)(1 - f_z) \times \text{occupancy}_n$$
 
-where $\sigma_{B_n}^2 = \frac{B_n}{8\pi^2}$ and $r_n = (x_n, y_n, z_n)$ is the atom position.
+and similarly for the other seven corners, where $f_x$, $f_y$, $f_z$ are the fractional offsets from the nearest grid point.
 
-For each atom, we distribute its contribution to nearby grid points within a cutoff radius (typically $5\sigma_{B_n}$). The weight assigned to grid point $(i,j,k)$, with coordinates $r_{ijk} = (x_i, y_j, z_k)$, can be calculated in two ways.
+This yields a map $\rho_{\text{atom}}(\mathbf{r}_{ijk})$ representing the atomic distribution at **infinite resolution** - only the atom positions have been transferred to the grid.
 
-##### Option A: Analytical Integration Using Error Functions (Default)
+#### Step 2: Apply Combined Element+Resolution Kernel via FFT
 
-The exact weight is obtained by integrating the Gaussian over the voxel volume. For a voxel with boundaries $[x_i, x_i+h]$, $[y_j, y_j+h]$, $[z_k, z_k+h]$, the integral factorizes into three one-dimensional integrals:
-
-$$w_{ijk}^{(n)} = \text{occupancy}_n \times I_x(i, n) \times I_y(j, n) \times I_z(k, n)$$
-
-where each one-dimensional integral is:
-
-$$I_x(i, n) = \int_{x_i}^{x_i+h} \frac{1}{\sqrt{2\pi\sigma_{B_n}^2}} \exp\left(-\frac{(x - x_n)^2}{2\sigma_{B_n}^2}\right) dx$$
-
-This integral has an analytical solution using the error function:
-
-$$I_x(i, n) = \frac{1}{2} \left[ \text{erf}\left(\frac{x_i+h - x_n}{\sqrt{2}\sigma_{B_n}}\right) - \text{erf}\left(\frac{x_i - x_n}{\sqrt{2}\sigma_{B_n}}\right) \right]$$
-
-Similarly for $I_y(j, n)$ and $I_z(k, n)$. The product of these three terms gives the exact fraction of the Gaussian density contained within the voxel at $(i,j,k)$. This approach guarantees that for each atom:
-
-$$\sum_{i,j,k} w_{ijk}^{(n)} = \text{occupancy}_n$$
-
-regardless of grid spacing.
-
-##### Option B: Point Sampling (Faster)
-
-For faster computation, the weight can be approximated by evaluating the Gaussian at the grid point and multiplying by the voxel volume:
-
-$$w_{ijk}^{(n)} \approx \text{occupancy}_n \times \frac{1}{(2\pi\sigma_{B_n}^2)^{3/2}} \exp\left(-\frac{|\mathbf{r}_{ijk} - \mathbf{r}_n|^2}{2\sigma_{B_n}^2}\right) \times h^3$$
-
-This approximation becomes more accurate as the grid spacing decreases relative to $\sigma_{B_n}$. For typical grids where $h < \sigma_{B_n}/2$, the error is on the order of $(h/\sigma_{B_n})^2$.
-
-
-
-#### Result of Step 1
-
-After processing all atoms, we obtain for each element type $m$ a **B-factor blurred map**:
-
-$$\rho_{B,m}(\mathbf{r}_{ijk}) = \sum_{n \in \text{element } m} w_{ijk}^{(n)}$$
-
-This map represents the atomic distribution including thermal motion, but still at **infinite resolution** - only B-factor broadening has been applied. The element kernel and resolution blur will be applied in Step 2.
-
-#### Step 2: Element Kernel + Resolution Blurring (Combined)
-
-After B-factor blurring, we need to apply two remaining convolutions:
-- The element-specific kernel $K_{\text{element}}$ (from Peng1996 coefficients)
-- The resolution-dependent Gaussian $G_{\text{res}}$
-
-Both are identical for all atoms of a given element, so we combine them into a single kernel and apply it in Fourier space:
-
-$$\rho_{\text{element}}(\mathbf{r}) = \rho_{B,\text{element}}(\mathbf{r}) * \left( K_{\text{element}} * G_{\text{res}} \right)$$
-
-The Fourier transforms have simple analytical forms:
-
-$$F \left(K_{\text{element}}\right) (s) = \sum_{i=1}^{5} a_i \exp\left(-\frac{b_i s^2}{4\pi^2}\right)$$
-
-$$F \left(G_{\text{res}}\right)(s) = \exp\left(-\frac{\sigma_{\text{res}}^2 s^2}{2}\right)$$
-
-The combined kernel in Fourier space is therefore:
+After atom projection, we apply the combined kernel in Fourier space:
 
 $$K_{\text{combined}}(s) = \left( \sum_{i=1}^{5} a_i \exp\left(-\frac{b_i s^2}{4\pi^2}\right) \right) \times \exp\left(-\frac{\sigma_{\text{res}}^2 s^2}{2}\right)$$
 
 For each element type, we:
-- Perform a forward FFT of the B-factor blurred map
+- Perform a forward FFT of the projected atom map
 - Multiply by the combined kernel in Fourier space
 - Perform an inverse FFT to obtain the final map for that element
 - Sum all element maps to produce the complete density map
 
+This approach maintains computational efficiency (one kernel per element type) while properly modeling the element-specific scattering and resolution-dependent blurring.
 
+#### Final Normalization
 
-#### Kernel Normalisation
-
-Proper normalisation is critical for physically meaningful maps:
-
-1. **B-factor kernel**: After discretisation, the sum of weights assigned to all grid points for a single atom exactly equals its occupancy. This is guaranteed by the analytic integration over voxel volumes.
-
-2. **Combined kernel** (element + resolution): After discretisation onto the grid, we normalize so that the sum of all kernel values equals the element's scattering power at zero angle:
-   
-   $$\sum_{i,j,k} K_{\text{combined}}^{\text{grid}}(i,j,k) = f_e(0) = \sum_{i=1}^{5} a_i$$
-
-   This is achieved by evaluating the continuous kernel at grid points, computing the total sum $S$, then scaling all values by $f_e(0)/S$.
-
-
-
-
-
-
-
+After summing contributions from all elements, the map is normalized so that the sum of all voxel values equals the total scattering power of the structure (sum of $f_e(0)$ or atomic numbers, depending on amplitude mode). The map is also scaled to a maximum value of 1.0 for visualization compatibility.
 
 ---
 
@@ -324,18 +244,9 @@ The core computation in `gaussian.cpp` [ChimeraXSource] implements an optimized 
 
    $$\rho(i,j,k) \mathrel{+}= Z \cdot \exp\left(-\frac{1}{2}\left[\left(\frac{i-i_c}{\sigma/s}\right)^2 + \left(\frac{j-j_c}{\sigma/s}\right)^2 + \left(\frac{k-k_c}{\sigma/s}\right)^2\right]\right)$$
 
-#### Normalisation
+#### Final Normalization
 
-After summation, the map is normalised by:
-
-$$\rho_{\text{norm}}(\mathbf{r}) = \rho(\mathbf{r}) \cdot (2\pi)^{-3/2} \sigma^{-3}$$
-
-This normalisation ensures that the integral of each Gaussian equals its atomic number $Z$. The final map is then scaled to a maximum value of 1.0 for visualization compatibility [Pettersen2020].
-
-
-
-
-
+After summation, the map is normalized globally to a maximum value of 1.0 for visualization compatibility [Pettersen2020].
 
 
 ***
@@ -368,15 +279,7 @@ The user can specify the target resolution in two modes:
 
 1. **Half-max radius mode** (positive input value): The input value is used directly as the half-max radius $r_h$ for the kernel.
 
-2. **$2\sigma$ mode** (negative input value): The absolute input value is used as the target resolution $R = 2\sigma$, where $\sigma$ is the standard deviation of a Gaussian kernel. The half-max radius $r_h$ is then calculated based on the kernel type using the relationships from the original Situs code:
-
-| Kernel Type | $r_h$ from $\sigma$ (2σ mode) | $\sigma$ from $r_h$ (half-max mode) |
-|-------------|-------------------------------|-------------------------------------|
-| Gaussian | $r_h = \sigma \sqrt{\dfrac{\ln 2}{1.5}}$ | $\sigma = r_h \sqrt{\dfrac{1.5}{\ln 2}}$ |
-| Triangular | $r_h = \sigma / [2 \cdot \sqrt{\dfrac{3 \cdot 4}{5 \cdot 6}}]$ | $\sigma = r_h \cdot [2 \cdot \sqrt{\dfrac{3 \cdot 4}{5 \cdot 6}}]$ |
-| Semi-Epanechnikov | $r_h = \sigma / [2^{1/1.5} \cdot \sqrt{\dfrac{3 \cdot 4.5}{5 \cdot 6.5}}]$ | $\sigma = r_h \cdot [2^{1/1.5} \cdot \sqrt{\dfrac{3 \cdot 4.5}{5 \cdot 6.5}}]$ |
-| Epanechnikov | $r_h = \sigma / [\sqrt{2} \cdot \sqrt{\dfrac{3 \cdot 5}{5 \cdot 7}}]$ | $\sigma = r_h \cdot [\sqrt{2} \cdot \sqrt{\dfrac{3 \cdot 5}{5 \cdot 7}}]$ |
-| Hard Sphere | $r_h = \sigma / [2^{1/60} \cdot \sqrt{\dfrac{3 \cdot 63}{5 \cdot 65}}]$ | $\sigma = r_h \cdot [2^{1/60} \cdot \sqrt{\dfrac{3 \cdot 63}{5 \cdot 65}}]$ |
+2. **$2\sigma$ mode** (negative input value): The absolute input value is used as the target resolution $R = 2\sigma$, where $\sigma$ is the standard deviation of a Gaussian kernel. The half-max radius $r_h$ is then calculated based on the kernel type using the relationships from the original Situs code.
 
 #### Cutoff Radii
 
@@ -396,20 +299,10 @@ The initial projection onto a lattice using trilinear interpolation introduces a
 
 $$\sigma_{\text{corrected}}^2 = \sigma_{\text{target}}^2 - \sigma_{\text{lattice}}^2$$
 
-where $\sigma_{\text{target}}$ is the width required to achieve the desired resolution, and $\sigma_{\text{lattice}}$ is the standard deviation of the point-spread function introduced by the trilinear projection, calculated during atom projection:
-
-$$\sigma_{\text{lattice}}^2 = \frac{1}{M} \sum_{\text{atoms}} \sum_{\text{8 corners}} w \cdot f \cdot ((1-a)^2 + (1-b)^2 + (1-c)^2)$$
-
-This correction ensures that the final map more accurately matches the target resolution when enabled with `--situs-correction`.
-
-
-
-
+where $\sigma_{\text{target}}$ is the width required to achieve the desired resolution, and $\sigma_{\text{lattice}}$ is the standard deviation of the point-spread function introduced by the trilinear projection, calculated during atom projection. This correction ensures that the final map more accurately matches the target resolution when enabled with `--situs-correction`.
 
 
 ***
-
-
 
 
 ## Input Parameters
@@ -453,8 +346,7 @@ This correction ensures that the final map more accurately matches the target re
 | Parameter | Format | Default | Description |
 |-----------|--------|---------|-------------|
 | `-a` | string | `peng1996` | Amplitude mode: `peng1996` or `atomic-number` |
-| `--no-bfac` | flag | - | Ignore B-factors from PDB file |
-| `--b-default` | float | 20.0 | Default B-factor when not using PDB values |
+| `--b-default` | float | 20.0 | Default B-factor when reading PDB (informational only) |
 
 ### ChimeraX-Specific Parameters
 
@@ -531,13 +423,9 @@ where:
 
 
 
-Default Peng1996 mode (B-factors ignored, using default 20.0 Å²):
+Default Peng1996 mode (B-factors ignored):
 
 <tt>pdb2mrc -i 1ake.pdb -o 1ake.mrc -r 8.0</tt>
-
-Peng1996 with per-element averaged B-factors:
-
-<tt>pdb2mrc -i 1ake.pdb -o 1ake_bfac.mrc -r 8.0 --use-bfac</tt>
 
 ChimeraX mode with custom cutoff:
 
@@ -572,8 +460,6 @@ Full filtering options (water always filtered):
 <tt>cmake ..</tt>
 <tt>make</tt>
 
-I'll update the References section with DOIs and links:
-
 ## References
 
 [ChimeraXSource] UCSF ChimeraX. (2023). *Gaussian summation implementation*. GitHub repository. https://github.com/ucsf-chimerax/chimerax
@@ -586,7 +472,7 @@ I'll update the References section with DOIs and links:
 
 [Murshudov1997] Murshudov, G. N., Vagin, A. A., & Dodson, E. J. (1997). Refinement of macromolecular structures by the maximum-likelihood method. *Acta Crystallographica Section D*, 53(3), 240-255. https://doi.org/10.1107/S0907444996012255
 
-[Murshudov2011] Murshudov, G. N., Skubák, P., Lebedev, A. A., Pannu, N. S., Steiner, R. A., Nicholls, R. A., Winn, M. D., Long, F., & Vagin, A. A. (2011). REFMAC5 for the refinement of macromolecular crystal structures. *Acta Crystallographica Section D*, 67(4), 355-367. https://doi.org/10.1107/S0907444911001314
+[Murshudov2011] Murshudov, G. N., Skubák, P., Lebedev, A. A., Pannu, R. S., Steiner, R. A., Nicholls, R. A., Winn, M. D., Long, F., & Vagin, A. A. (2011). REFMAC5 for the refinement of macromolecular crystal structures. *Acta Crystallographica Section D*, 67(4), 355-367. https://doi.org/10.1107/S0907444911001314
 
 [Peng1996] Peng, L. M., Ren, G., Dudarev, S. L., & Whelan, M. J. (1996). Robust parameterization of elastic and absorptive electron atomic scattering factors. *Acta Crystallographica Section A*, 52(2), 257-276. https://doi.org/10.1107/S0108767395014371
 
